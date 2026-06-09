@@ -76,6 +76,16 @@ func (s *Server) Start(ctx context.Context, listen string) error {
 	r.Get("/api/v1/metrics", met.Metrics)
 	r.Get("/api/v1/metrics/series", met.Series)
 
+	// Notify channels
+	ntfy := &api.NotifyHandler{Deps: s.deps}
+	r.Route("/api/v1/notify/channels", func(r chi.Router) {
+		r.Get("/", ntfy.List)
+		r.Post("/", ntfy.Create)
+		r.Put("/{id}", ntfy.Update)
+		r.Delete("/{id}", ntfy.Delete)
+		r.Post("/test", ntfy.TestSend)
+	})
+
 	r.Handle("/*", spaHandler())
 
 	srv := &http.Server{
