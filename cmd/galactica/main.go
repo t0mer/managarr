@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/t0mer/galactica/internal/config"
+	"github.com/t0mer/galactica/internal/scheduler"
 	"github.com/t0mer/galactica/internal/server"
 	"github.com/t0mer/galactica/internal/storage"
 	"github.com/t0mer/galactica/internal/version"
@@ -99,6 +100,10 @@ func (p *program) run(ctx context.Context) {
 		os.Exit(1)
 	}
 	defer store.Close()
+
+	sched := scheduler.New(store, p.cfg.SecretKey, p.log)
+	sched.Start()
+	defer sched.Stop()
 
 	srv := server.New(p.cfg, store, p.log)
 	if err := srv.Start(ctx, p.cfg.Server.Listen); err != nil {
