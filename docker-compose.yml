@@ -1,0 +1,18 @@
+# docker-compose.yml
+services:
+  galactica:
+    image: techblog/galactica:dev
+    build:
+      context: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - galactica-data:/data
+    environment:
+      GALACTICA_LOG_LEVEL: info
+      GALACTICA_LOG_FORMAT: json
+      GALACTICA_STORAGE_DSN: "file:/data/galactica.db?cache=shared&_fk=1"
+    restart: unless-stopped
+
+volumes:
+  galactica-data:
