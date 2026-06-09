@@ -71,6 +71,11 @@ func (s *Server) Start(ctx context.Context, listen string) error {
 	r.Get("/api/v1/logs", logs.List)
 	r.Get("/api/v1/logs/stream", logs.Stream)
 
+	// Metrics
+	met := &api.MetricsHandler{Deps: s.deps}
+	r.Get("/api/v1/metrics", met.Metrics)
+	r.Get("/api/v1/metrics/series", met.Series)
+
 	r.Handle("/*", spaHandler())
 
 	srv := &http.Server{
