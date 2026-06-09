@@ -66,6 +66,11 @@ func (s *Server) Start(ctx context.Context, listen string) error {
 		r.Patch("/{id}/enabled", inst.SetEnabled)
 	})
 
+	// Logs
+	logs := &api.LogsHandler{Deps: s.deps}
+	r.Get("/api/v1/logs", logs.List)
+	r.Get("/api/v1/logs/stream", logs.Stream)
+
 	r.Handle("/*", spaHandler())
 
 	srv := &http.Server{
