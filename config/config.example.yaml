@@ -1,0 +1,18 @@
+# config/config.example.yaml
+server:
+  listen: ":8080"
+
+storage:
+  driver: sqlite   # sqlite | postgres
+  dsn: "file:/data/galactica.db?cache=shared&_fk=1"
+
+# secret_key is required when any secrets are stored (API keys, tokens).
+# Generate with: openssl rand -hex 32
+secret_key: ""
+
+log:
+  level: info     # debug | info | warn | error
+  format: json    # json | text
+
+auth:
+  enabled: false

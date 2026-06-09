@@ -1,0 +1,5 @@
+# .goreleaser.yaml — stub; full config added at release time
+version: 2
+project_name: galactica
+builds:
+  - skip: true

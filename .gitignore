@@ -30,3 +30,23 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Build output
+bin/
+tmp/
+
+# Frontend
+web/node_modules/
+web/.vite/
+
+# Embedded SPA build (tracked placeholder excluded below)
+internal/server/dist/*
+!internal/server/dist/.gitkeep
+
+# Vendored Swagger UI (copied from node_modules at build time)
+internal/api/swagger-ui/*
+!internal/api/swagger-ui/.gitkeep
+
+# Config
+*.db
+*.db-journal
