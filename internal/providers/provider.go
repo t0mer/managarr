@@ -29,6 +29,7 @@ type Instance struct {
 	Kind    Kind
 	Name    string
 	BaseURL string
+	APIKey  string // resolved from secrets table, never in API responses
 }
 
 // LogEntry is a normalised log line from any provider.
