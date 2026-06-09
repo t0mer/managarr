@@ -2,8 +2,10 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -12,6 +14,23 @@ import (
 	"github.com/t0mer/galactica/internal/providers"
 	"github.com/t0mer/galactica/internal/storage"
 )
+
+// storeAPIKey encrypts key with secretKey and stores it, or stores it as
+// plaintext when no secretKey is configured (with a warning).
+func storeAPIKey(db *sql.DB, secretKey, instanceID, apiKey string, log *slog.Logger) error {
+	var toStore []byte
+	if secretKey != "" {
+		enc, err := storage.Encrypt([]byte(apiKey), secretKey)
+		if err != nil {
+			return err
+		}
+		toStore = enc
+	} else {
+		log.Warn("GALACTICA_SECRET_KEY not set — storing API key as plaintext; set a secret key for encrypted storage")
+		toStore = []byte(apiKey)
+	}
+	return storage.PutSecret(db, instanceID, "api_key", toStore)
+}
 
 // InstancesHandler handles /api/v1/instances routes.
 type InstancesHandler struct{ *Deps }
@@ -75,10 +94,9 @@ func (h *InstancesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if req.APIKey != "" && h.SecretKey != "" {
-		enc, err := storage.Encrypt([]byte(req.APIKey), h.SecretKey)
-		if err == nil {
-			_ = storage.PutSecret(h.DB, id, "api_key", enc)
+	if req.APIKey != "" {
+		if err := storeAPIKey(h.DB, h.SecretKey, id, req.APIKey, h.Log); err != nil {
+			h.Log.Warn("storing api key", "instance_id", id, "error", err)
 		}
 	}
 	row, err2 := storage.GetInstance(h.DB, id)
@@ -119,10 +137,9 @@ func (h *InstancesHandler) Update(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if req.APIKey != "" && h.SecretKey != "" {
-		enc, err := storage.Encrypt([]byte(req.APIKey), h.SecretKey)
-		if err == nil {
-			_ = storage.PutSecret(h.DB, id, "api_key", enc)
+	if req.APIKey != "" {
+		if err := storeAPIKey(h.DB, h.SecretKey, id, req.APIKey, h.Log); err != nil {
+			h.Log.Warn("storing api key", "instance_id", id, "error", err)
 		}
 	}
 	row, err = storage.GetInstance(h.DB, id)

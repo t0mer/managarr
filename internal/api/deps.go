@@ -37,13 +37,18 @@ func (d *Deps) resolve(ctx context.Context, id string) (providers.Instance, erro
 		Name:    row.Name,
 		BaseURL: row.BaseURL,
 	}
-	if d.SecretKey != "" {
-		enc, serr := storage.GetSecret(d.DB, id, "api_key")
-		if serr == nil && len(enc) > 0 {
+	enc, serr := storage.GetSecret(d.DB, id, "api_key")
+	if serr == nil && len(enc) > 0 {
+		if d.SecretKey != "" {
 			plain, derr := storage.Decrypt(enc, d.SecretKey)
 			if derr == nil {
 				inst.APIKey = string(plain)
+			} else {
+				// Stored as plaintext (no secret key was set when this was saved).
+				inst.APIKey = string(enc)
 			}
+		} else {
+			inst.APIKey = string(enc)
 		}
 	}
 	return inst, nil
