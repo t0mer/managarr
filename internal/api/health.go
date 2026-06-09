@@ -50,3 +50,7 @@ func jsonResponse(w http.ResponseWriter, status int, v any) {
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v) //nolint:errcheck
 }
+
+func jsonError(w http.ResponseWriter, status int, msg string) {
+	jsonResponse(w, status, map[string]string{"error": msg})
+}

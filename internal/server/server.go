@@ -24,11 +24,17 @@ type Server struct {
 	cfg   *config.Config
 	store storage.Store
 	log   *slog.Logger
+	deps  *api.Deps
 }
 
 // New creates a new Server with the given dependencies.
 func New(cfg *config.Config, store storage.Store, log *slog.Logger) *Server {
-	return &Server{cfg: cfg, store: store, log: log}
+	deps := &api.Deps{
+		DB:        store.DB(),
+		SecretKey: cfg.SecretKey,
+		Log:       log,
+	}
+	return &Server{cfg: cfg, store: store, log: log, deps: deps}
 }
 
 // Start builds the chi router and listens until ctx is cancelled.
@@ -47,6 +53,18 @@ func (s *Server) Start(ctx context.Context, listen string) error {
 	r.Handle("/metrics", promhttp.Handler())
 
 	r.Mount("/api/docs", api.DocsHandler())
+
+	// Instances
+	inst := &api.InstancesHandler{Deps: s.deps}
+	r.Route("/api/v1/instances", func(r chi.Router) {
+		r.Get("/", inst.List)
+		r.Post("/", inst.Create)
+		r.Get("/{id}", inst.Get)
+		r.Put("/{id}", inst.Update)
+		r.Delete("/{id}", inst.Delete)
+		r.Post("/{id}/test", inst.TestConnection)
+		r.Patch("/{id}/enabled", inst.SetEnabled)
+	})
 
 	r.Handle("/*", spaHandler())
 
