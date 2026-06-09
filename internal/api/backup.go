@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -15,6 +17,21 @@ import (
 	"github.com/t0mer/galactica/internal/providers"
 	"github.com/t0mer/galactica/internal/storage"
 )
+
+var unsafeNameChars = regexp.MustCompile(`[^A-Za-z0-9._-]`)
+
+// safeName strips characters that could be used for path traversal from a name
+// intended for use as a filesystem path component.
+func safeName(s string) string {
+	return strings.Trim(unsafeNameChars.ReplaceAllString(s, "_"), "._")
+}
+
+// containedIn returns true if target, after cleaning, is strictly under root.
+func containedIn(root, target string) bool {
+	root = filepath.Clean(root)
+	target = filepath.Clean(target)
+	return strings.HasPrefix(target, root+string(os.PathSeparator))
+}
 
 // BackupHandler handles /api/v1/backup routes.
 type BackupHandler struct{ *Deps }
@@ -182,7 +199,11 @@ func (h *BackupHandler) RunBackup(w http.ResponseWriter, r *http.Request) {
 	// Extract path from target config.
 	var cfg map[string]string
 	_ = json.Unmarshal(target.ConfigEncrypted, &cfg)
-	backupPath := cfg["path"]
+	backupRoot := filepath.Clean(cfg["path"])
+	if backupRoot == "" || backupRoot == "." {
+		jsonError(w, http.StatusInternalServerError, "backup target has no path configured")
+		return
+	}
 
 	backupID := uuid.New().String()
 	now := time.Now()
@@ -201,19 +222,40 @@ func (h *BackupHandler) RunBackup(w http.ResponseWriter, r *http.Request) {
 			_ = storage.UpdateBackupStatus(h.DB, backupID, "error", "", err.Error(), 0)
 			return
 		}
-		// Write to local filesystem.
-		dir := filepath.Join(backupPath, inst.ID)
+		// Sanitize path components to prevent traversal.
+		safeID := safeName(inst.ID)
+		safeName_ := safeName(inst.Name)
+		if safeID == "" {
+			safeID = "unknown"
+		}
+		if safeName_ == "" {
+			safeName_ = "instance"
+		}
+		dir := filepath.Join(backupRoot, safeID)
+		if !containedIn(backupRoot, dir) {
+			_ = storage.UpdateBackupStatus(h.DB, backupID, "error", "", "computed dir escapes backup root", 0)
+			return
+		}
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			_ = storage.UpdateBackupStatus(h.DB, backupID, "error", "", fmt.Sprintf("mkdir: %v", err), 0)
 			return
 		}
-		fileName := fmt.Sprintf("%s-%s.json", inst.Name, now.Format("20060102T150405Z"))
+		fileName := fmt.Sprintf("%s-%s.json", safeName_, now.Format("20060102T150405Z"))
 		fullPath := filepath.Join(dir, fileName)
+		if !containedIn(backupRoot, fullPath) {
+			_ = storage.UpdateBackupStatus(h.DB, backupID, "error", "", "computed path escapes backup root", 0)
+			return
+		}
 		if err := os.WriteFile(fullPath, blob.Data, 0o640); err != nil {
 			_ = storage.UpdateBackupStatus(h.DB, backupID, "error", "", fmt.Sprintf("write: %v", err), 0)
 			return
 		}
-		_ = storage.UpdateBackupStatus(h.DB, backupID, "success", fullPath, "", int64(len(blob.Data)))
+		// Store only the relative filename, not the full server path, to avoid disclosing server layout.
+		relPath, relErr := filepath.Rel(backupRoot, fullPath)
+		if relErr != nil {
+			relPath = fileName
+		}
+		_ = storage.UpdateBackupStatus(h.DB, backupID, "success", relPath, "", int64(len(blob.Data)))
 	}()
 
 	jsonResponse(w, http.StatusAccepted, map[string]string{"backup_id": backupID, "status": "pending"})

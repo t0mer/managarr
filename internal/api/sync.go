@@ -184,6 +184,7 @@ func (h *SyncHandler) Preview(w http.ResponseWriter, r *http.Request) {
 }
 
 // Apply handles POST /api/v1/sync/jobs/{id}/apply.
+// TODO: gate this behind an auth/admin middleware once GALACTICA_AUTH_ENABLED is wired up.
 func (h *SyncHandler) Apply(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	job, err := storage.GetSyncJob(h.DB, id)
