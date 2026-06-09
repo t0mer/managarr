@@ -1,0 +1,22 @@
+/* web/src/index.css */
+@import "tailwindcss";
+
+:root {
+  --bg: #ffffff;
+  --fg: #111827;
+  --sidebar-bg: #f9fafb;
+  --border: #e5e7eb;
+}
+
+.dark {
+  --bg: #111827;
+  --fg: #f9fafb;
+  --sidebar-bg: #1f2937;
+  --border: #374151;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, sans-serif;
+}
