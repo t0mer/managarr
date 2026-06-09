@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -22,7 +23,7 @@ type Jackett struct{}
 func (j *Jackett) Kind() providers.Kind { return providers.KindJackett }
 
 func (j *Jackett) TestConnection(ctx context.Context, inst providers.Instance) error {
-	_, err := getJSON(ctx, inst, "/api/v2.0/indexers?configured=true")
+	_, err := getJSON(ctx, inst, "/api/v2.0/indexers")
 	return err
 }
 
@@ -42,28 +43,30 @@ type indexer struct {
 func (j *Jackett) Collect(ctx context.Context, inst providers.Instance) ([]providers.Sample, error) {
 	now := time.Now()
 
-	configured, err := getJSON(ctx, inst, "/api/v2.0/indexers?configured=true")
+	data, err := getJSON(ctx, inst, "/api/v2.0/indexers")
 	if err != nil {
 		return nil, fmt.Errorf("jackett collect: %w", err)
 	}
-	var configuredIndexers []indexer
-	_ = json.Unmarshal(configured, &configuredIndexers)
-
-	all, err := getJSON(ctx, inst, "/api/v2.0/indexers")
-	if err != nil {
-		return nil, fmt.Errorf("jackett collect all: %w", err)
+	var all []indexer
+	if err := json.Unmarshal(data, &all); err != nil {
+		return nil, fmt.Errorf("jackett collect unmarshal: %w", err)
 	}
-	var allIndexers []indexer
-	_ = json.Unmarshal(all, &allIndexers)
+
+	configured := 0
+	for _, idx := range all {
+		if idx.Configured {
+			configured++
+		}
+	}
 
 	return []providers.Sample{
-		{Metric: "jackett_indexers_total", Value: float64(len(allIndexers)), TS: now},
-		{Metric: "jackett_indexers_configured", Value: float64(len(configuredIndexers)), TS: now},
+		{Metric: "jackett_indexers_total", Value: float64(len(all)), TS: now},
+		{Metric: "jackett_indexers_configured", Value: float64(configured), TS: now},
 	}, nil
 }
 
 func (j *Jackett) ExportConfig(ctx context.Context, inst providers.Instance) (providers.ConfigBlob, error) {
-	data, err := getJSON(ctx, inst, "/api/v2.0/indexers?configured=true")
+	data, err := getJSON(ctx, inst, "/api/v2.0/indexers")
 	if err != nil {
 		return providers.ConfigBlob{}, fmt.Errorf("jackett export: %w", err)
 	}
@@ -75,7 +78,7 @@ func (j *Jackett) ImportConfig(_ context.Context, _ providers.Instance, _ provid
 }
 
 func (j *Jackett) Snapshot(ctx context.Context, inst providers.Instance) (providers.SyncState, error) {
-	data, err := getJSON(ctx, inst, "/api/v2.0/indexers?configured=true")
+	data, err := getJSON(ctx, inst, "/api/v2.0/indexers")
 	if err != nil {
 		return providers.SyncState{}, fmt.Errorf("jackett snapshot: %w", err)
 	}
@@ -83,12 +86,18 @@ func (j *Jackett) Snapshot(ctx context.Context, inst providers.Instance) (provid
 	if err := json.Unmarshal(data, &indexers); err != nil {
 		return providers.SyncState{}, fmt.Errorf("jackett snapshot unmarshal: %w", err)
 	}
-	ids := make([]string, len(indexers))
-	for i, idx := range indexers {
-		ids[i] = idx.ID
+
+	configured := 0
+	ids := make([]string, 0, len(indexers))
+	for _, idx := range indexers {
+		if idx.Configured {
+			configured++
+			ids = append(ids, idx.ID)
+		}
 	}
+
 	return providers.SyncState{Data: map[string]any{
-		"indexer_count": len(indexers),
+		"indexer_count": configured,
 		"indexer_ids":   ids,
 	}}, nil
 }
@@ -111,19 +120,20 @@ func (j *Jackett) Apply(_ context.Context, _ providers.Instance, _ []providers.S
 	return nil
 }
 
+// getJSON calls the Jackett REST API. Authentication uses the ?apikey= query
+// parameter — Jackett does not support X-Api-Key headers.
 func getJSON(ctx context.Context, inst providers.Instance, path string) ([]byte, error) {
-	// Jackett's REST API authenticates via the ?apikey= query parameter only;
-	// it does not support X-Api-Key headers. The key is not user-visible in the
-	// UI response, but operators should be aware it will appear in server access logs.
-	url := inst.BaseURL + path
-	if inst.APIKey != "" {
-		if strings.Contains(path, "?") {
-			url += "&apikey=" + inst.APIKey
-		} else {
-			url += "?apikey=" + inst.APIKey
-		}
+	base := strings.TrimRight(inst.BaseURL, "/")
+	u, err := url.Parse(base + path)
+	if err != nil {
+		return nil, fmt.Errorf("building URL: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if inst.APIKey != "" {
+		q := u.Query()
+		q.Set("apikey", inst.APIKey)
+		u.RawQuery = q.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
