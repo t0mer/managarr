@@ -2,8 +2,13 @@
 package deluge
 
 import (
+	"bytes"
 	"context"
-	"math/rand"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/cookiejar"
 	"time"
 
 	"github.com/t0mer/galactica/internal/providers"
@@ -15,61 +20,119 @@ type Deluge struct{}
 
 func (d *Deluge) Kind() providers.Kind { return providers.KindDeluge }
 
-func (d *Deluge) TestConnection(_ context.Context, _ providers.Instance) error { return nil }
+type rpcReq struct {
+	Method string `json:"method"`
+	Params []any  `json:"params"`
+	ID     int    `json:"id"`
+}
 
-func (d *Deluge) FetchLogs(_ context.Context, inst providers.Instance, _ time.Time) ([]providers.LogEntry, error) {
-	rng := rand.New(rand.NewSource(seedFromID(inst.ID)))
-	levels := []string{"info", "warn", "error", "debug"}
-	messages := []string{
-		"Torrent added", "Download complete", "Seeding ratio reached",
-		"Disk space low", "Tracker announce success", "Move completed",
+type rpcResp struct {
+	Result any `json:"result"`
+	Error  *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+	ID int `json:"id"`
+}
+
+func newClient() *http.Client {
+	jar, _ := cookiejar.New(nil)
+	return &http.Client{Timeout: 15 * time.Second, Jar: jar}
+}
+
+func rpc(ctx context.Context, cli *http.Client, baseURL, method string, params []any) (any, error) {
+	body, err := json.Marshal(rpcReq{Method: method, Params: params, ID: 1})
+	if err != nil {
+		return nil, err
 	}
-	entries := make([]providers.LogEntry, 20)
-	base := time.Now()
-	for i := range entries {
-		entries[i] = providers.LogEntry{
-			Timestamp: base.Add(-time.Duration(rng.Intn(3600)) * time.Second),
-			Level:     levels[rng.Intn(len(levels))],
-			Source:    "Deluge",
-			Message:   messages[rng.Intn(len(messages))],
-		}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
 	}
-	return entries, nil
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var r rpcResp
+	if err := json.Unmarshal(b, &r); err != nil {
+		return nil, err
+	}
+	if r.Error != nil {
+		return nil, fmt.Errorf("deluge RPC error: %s", r.Error.Message)
+	}
+	return r.Result, nil
+}
+
+func authenticate(ctx context.Context, cli *http.Client, inst providers.Instance) error {
+	result, err := rpc(ctx, cli, inst.BaseURL, "auth.login", []any{inst.APIKey})
+	if err != nil {
+		return fmt.Errorf("deluge auth: %w", err)
+	}
+	if ok, _ := result.(bool); !ok {
+		return fmt.Errorf("deluge auth failed")
+	}
+	return nil
+}
+
+func (d *Deluge) TestConnection(ctx context.Context, inst providers.Instance) error {
+	cli := newClient()
+	if err := authenticate(ctx, cli, inst); err != nil {
+		return err
+	}
+	_, err := rpc(ctx, cli, inst.BaseURL, "core.get_session_status", []any{[]string{}})
+	return err
+}
+
+func (d *Deluge) FetchLogs(_ context.Context, _ providers.Instance, _ time.Time) ([]providers.LogEntry, error) {
+	return nil, nil
 }
 
 func (d *Deluge) StreamLogs(_ context.Context, _ providers.Instance) (<-chan providers.LogEntry, error) {
-	ch := make(chan providers.LogEntry)
-	close(ch)
-	return ch, nil
+	return nil, fmt.Errorf("streaming not supported for deluge")
 }
 
-func (d *Deluge) Collect(_ context.Context, _ providers.Instance) ([]providers.Sample, error) {
+func (d *Deluge) Collect(ctx context.Context, inst providers.Instance) ([]providers.Sample, error) {
 	now := time.Now()
+	cli := newClient()
+	if err := authenticate(ctx, cli, inst); err != nil {
+		return nil, fmt.Errorf("deluge collect: %w", err)
+	}
+	result, err := rpc(ctx, cli, inst.BaseURL, "core.get_session_status", []any{[]string{"upload_rate", "download_rate", "num_connections"}})
+	if err != nil {
+		return nil, fmt.Errorf("deluge get_session_status: %w", err)
+	}
+	status, _ := result.(map[string]any)
+	downloadRate, _ := status["download_rate"].(float64)
+	uploadRate, _ := status["upload_rate"].(float64)
+	numConns, _ := status["num_connections"].(float64)
 	return []providers.Sample{
-		{Metric: "deluge_torrents_active", Value: 12, TS: now},
-		{Metric: "deluge_torrents_seeding", Value: 9, TS: now},
-		{Metric: "deluge_torrents_downloading", Value: 3, TS: now},
-		{Metric: "deluge_upload_rate_bytes", Value: 1_250_000, TS: now},
-		{Metric: "deluge_download_rate_bytes", Value: 4_500_000, TS: now},
-		{Metric: "deluge_ratio_avg", Value: 1.87, TS: now},
+		{Metric: "deluge_download_rate_bytes", Value: downloadRate, TS: now},
+		{Metric: "deluge_upload_rate_bytes", Value: uploadRate, TS: now},
+		{Metric: "deluge_num_connections", Value: numConns, TS: now},
 	}, nil
 }
 
-func (d *Deluge) ExportConfig(_ context.Context, _ providers.Instance) (providers.ConfigBlob, error) {
-	return providers.ConfigBlob{
-		ContentType: "application/json",
-		Data:        []byte(`{"max_connections_global":200,"max_upload_speed":-1}`),
-	}, nil
+func (d *Deluge) ExportConfig(ctx context.Context, inst providers.Instance) (providers.ConfigBlob, error) {
+	cli := newClient()
+	if err := authenticate(ctx, cli, inst); err != nil {
+		return providers.ConfigBlob{}, fmt.Errorf("deluge export: %w", err)
+	}
+	result, err := rpc(ctx, cli, inst.BaseURL, "core.get_config", []any{})
+	if err != nil {
+		return providers.ConfigBlob{}, fmt.Errorf("deluge export config: %w", err)
+	}
+	b, err := json.Marshal(result)
+	if err != nil {
+		return providers.ConfigBlob{}, err
+	}
+	return providers.ConfigBlob{ContentType: "application/json", Data: b}, nil
 }
 
 func (d *Deluge) ImportConfig(_ context.Context, _ providers.Instance, _ providers.ConfigBlob) error {
 	return nil
-}
-
-func seedFromID(id string) int64 {
-	var h int64 = 17
-	for _, c := range id {
-		h = h*31 + int64(c)
-	}
-	return h
 }
