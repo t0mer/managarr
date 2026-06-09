@@ -11,7 +11,7 @@ func boolInt(b bool) int {
 
 // nullStr returns nil for an empty string so the driver stores SQL NULL,
 // or the string value itself otherwise.
-func nullStr(s string) interface{} {
+func nullStr(s string) any {
 	if s == "" {
 		return nil
 	}
