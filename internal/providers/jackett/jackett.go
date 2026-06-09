@@ -112,6 +112,9 @@ func (j *Jackett) Apply(_ context.Context, _ providers.Instance, _ []providers.S
 }
 
 func getJSON(ctx context.Context, inst providers.Instance, path string) ([]byte, error) {
+	// Jackett's REST API authenticates via the ?apikey= query parameter only;
+	// it does not support X-Api-Key headers. The key is not user-visible in the
+	// UI response, but operators should be aware it will appear in server access logs.
 	url := inst.BaseURL + path
 	if inst.APIKey != "" {
 		if strings.Contains(path, "?") {
