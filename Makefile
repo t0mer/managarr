@@ -4,9 +4,9 @@ COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE    := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 VERSION ?= dev
 LDFLAGS := -s -w \
-  -X main.Version=$(VERSION) \
-  -X main.Commit=$(COMMIT) \
-  -X main.Date=$(DATE)
+  -X github.com/t0mer/galactica/internal/version.Version=$(VERSION) \
+  -X github.com/t0mer/galactica/internal/version.Commit=$(COMMIT) \
+  -X github.com/t0mer/galactica/internal/version.Date=$(DATE)
 
 .PHONY: build ui-build ui-watch dev test lint docker
 
