@@ -1,16 +1,102 @@
 // web/src/lib/types.ts
 
-export type ProviderKind =
-  | 'sonarr' | 'radarr' | 'lidarr'
-  | 'jackett' | 'deluge'
-  | 'plex' | 'emby' | 'jellyfin'
+export type ProviderKind = 'sonarr' | 'radarr' | 'lidarr' | 'jackett' | 'deluge' | 'plex' | 'emby' | 'jellyfin'
+export type IssueStatus = 'open' | 'acknowledged' | 'resolved'
+export type LogLevel = 'debug' | 'info' | 'warn' | 'warning' | 'error' | 'fatal'
+export type NotifyProvider = 'shoutrrr' | 'greenapi' | 'whatsapp_web'
 
 export interface Instance {
   id: string
   kind: ProviderKind
   name: string
-  baseUrl: string
+  base_url: string
   enabled: boolean
+  created_at: string
+}
+
+export interface LogEntry {
+  id: number
+  instance_id: string
+  ts: string
+  level: LogLevel
+  message: string
+  source: string
+  raw?: string
+}
+
+export interface Issue {
+  id: string
+  fingerprint: string
+  instance_id: string
+  level: LogLevel
+  message: string
+  status: IssueStatus
+  first_seen: string
+  last_seen: string
+  count: number
+  impact_score: number
+}
+
+export interface MetricPoint {
+  ts: string
+  value: number
+}
+
+export interface MetricSeries {
+  metric: string
+  instance_id: string
+  points: MetricPoint[]
+}
+
+export interface NotifyChannel {
+  id: string
+  name: string
+  provider: NotifyProvider
+  notify_on_success: boolean
+  notify_on_failure: boolean
+  enabled: boolean
+  created_at: string
+}
+
+export interface BackupTarget {
+  id: string
+  name: string
+  type: string
+  retention_days: number
+  enabled: boolean
+  created_at: string
+}
+
+export interface Backup {
+  id: string
+  target_id: string
+  instance_id: string
+  ts: string
+  size_bytes: number
+  status: string
+  location?: string
+  error?: string
+}
+
+export interface SyncJob {
+  id: string
+  source_instance_id: string
+  target_instance_id: string
+  selectors: string[]
+  schedule?: string
+  enabled: boolean
+  created_at: string
+}
+
+export interface SyncChange {
+  field: string
+  old_value: unknown
+  new_value: unknown
+}
+
+export interface SyncPreview {
+  changes: SyncChange[]
+  count: number
 }
 
 export interface HealthResponse {

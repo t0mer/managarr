@@ -1,15 +1,119 @@
 // web/src/lib/api.ts
-import type { HealthResponse, VersionResponse } from './types'
+import type {
+  HealthResponse, VersionResponse,
+  Instance, LogEntry, Issue, IssueStatus,
+  MetricSeries, NotifyChannel, BackupTarget, Backup,
+  SyncJob, SyncPreview
+} from './types'
 
 const BASE = '/api/v1'
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`)
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new Error(`${res.status}: ${text}`)
+  }
+  if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }
 
+const get = <T>(path: string) => request<T>('GET', path)
+const post = <T>(path: string, body?: unknown) => request<T>('POST', path, body)
+const put = <T>(path: string, body?: unknown) => request<T>('PUT', path, body)
+const patch = <T>(path: string, body?: unknown) => request<T>('PATCH', path, body)
+const del = (path: string) => request<void>('DELETE', path)
+
 export const api = {
-  health: () => get<HealthResponse>('/health'),
+  health: () => fetch('/api/health').then(r => r.json() as Promise<HealthResponse>),
   version: () => fetch('/version').then(r => r.json() as Promise<VersionResponse>),
+
+  instances: {
+    list: () => get<Instance[]>('/instances'),
+    get: (id: string) => get<Instance>(`/instances/${id}`),
+    create: (body: { kind: string; name: string; base_url: string; api_key?: string }) =>
+      post<Instance>('/instances', body),
+    update: (id: string, body: { name: string; base_url: string; api_key?: string }) =>
+      put<Instance>(`/instances/${id}`, body),
+    delete: (id: string) => del(`/instances/${id}`),
+    test: (id: string) => post<{ ok: boolean; error?: string }>(`/instances/${id}/test`),
+    setEnabled: (id: string, enabled: boolean) =>
+      patch<void>(`/instances/${id}/enabled`, { enabled }),
+  },
+
+  logs: {
+    list: (params?: { instance_id?: string; level?: string; limit?: number; before?: string }) => {
+      const q = new URLSearchParams()
+      if (params?.instance_id) q.set('instance_id', params.instance_id)
+      if (params?.level) q.set('level', params.level)
+      if (params?.limit) q.set('limit', String(params.limit))
+      if (params?.before) q.set('before', params.before)
+      const qs = q.toString()
+      return get<LogEntry[]>(`/logs${qs ? '?' + qs : ''}`)
+    },
+    streamUrl: (params?: { instance_id?: string; level?: string }) => {
+      const q = new URLSearchParams()
+      if (params?.instance_id) q.set('instance_id', params.instance_id)
+      if (params?.level) q.set('level', params.level)
+      const qs = q.toString()
+      return `${BASE}/logs/stream${qs ? '?' + qs : ''}`
+    },
+  },
+
+  issues: {
+    list: (status?: IssueStatus | 'all') => {
+      const qs = status && status !== 'all' ? `?status=${status}` : ''
+      return get<Issue[]>(`/issues${qs}`)
+    },
+    get: (id: string) => get<Issue>(`/issues/${id}`),
+    updateStatus: (id: string, status: IssueStatus) =>
+      patch<void>(`/issues/${id}/status`, { status }),
+  },
+
+  metrics: {
+    series: (params: { instance_id?: string; metric?: string; from?: string; to?: string }) => {
+      const q = new URLSearchParams()
+      if (params.instance_id) q.set('instance_id', params.instance_id)
+      if (params.metric) q.set('metric', params.metric)
+      if (params.from) q.set('from', params.from)
+      if (params.to) q.set('to', params.to)
+      return get<MetricSeries[]>(`/metrics/series?${q.toString()}`)
+    },
+  },
+
+  notify: {
+    list: () => get<NotifyChannel[]>('/notify/channels'),
+    create: (body: {
+      name: string; provider: string; config: Record<string, string>;
+      notify_on_success: boolean; notify_on_failure: boolean; enabled: boolean
+    }) => post<NotifyChannel>('/notify/channels', body),
+    update: (id: string, body: unknown) => put<NotifyChannel>(`/notify/channels/${id}`, body),
+    delete: (id: string) => del(`/notify/channels/${id}`),
+    test: (body: unknown) => post<{ ok: boolean; error?: string }>('/notify/channels/test', body),
+  },
+
+  backup: {
+    listTargets: () => get<BackupTarget[]>('/backup/targets'),
+    createTarget: (body: { name: string; path: string; type?: string; retention_days?: number; enabled?: boolean }) =>
+      post<BackupTarget>('/backup/targets', body),
+    deleteTarget: (id: string) => del(`/backup/targets/${id}`),
+    run: (body: { target_id: string; instance_id: string }) =>
+      post<{ backup_id: string; status: string }>('/backup/run', body),
+    listBackups: (targetId: string) => get<Backup[]>(`/backup/targets/${targetId}/backups`),
+  },
+
+  sync: {
+    listJobs: () => get<SyncJob[]>('/sync/jobs'),
+    createJob: (body: {
+      source_instance_id: string; target_instance_id: string;
+      selectors?: string[]; schedule?: string; enabled?: boolean
+    }) => post<{ id: string }>('/sync/jobs', body),
+    deleteJob: (id: string) => del(`/sync/jobs/${id}`),
+    preview: (id: string) => post<SyncPreview>(`/sync/jobs/${id}/preview`),
+    apply: (id: string) => post<{ applied: number }>(`/sync/jobs/${id}/apply`),
+  },
 }
