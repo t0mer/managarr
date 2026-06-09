@@ -3,87 +3,145 @@ package radarr
 
 import (
 	"context"
-	"math/rand"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/t0mer/galactica/internal/providers"
+	"github.com/t0mer/galactica/internal/providers/servarr"
 )
 
-func init() { providers.Register(&Radarr{}) }
+func init() { providers.Register(&radarrProvider{}) }
 
-type Radarr struct{}
+type radarrProvider struct{}
 
-func (r *Radarr) Kind() providers.Kind { return providers.KindRadarr }
+func (p *radarrProvider) Kind() providers.Kind { return providers.KindRadarr }
 
-func (r *Radarr) TestConnection(_ context.Context, _ providers.Instance) error { return nil }
+// TestConnection calls /api/v3/system/status.
+func (p *radarrProvider) TestConnection(ctx context.Context, inst providers.Instance) error {
+	var status map[string]any
+	return servarr.GetJSON(ctx, inst, "/api/v3/system/status", &status)
+}
 
-func (r *Radarr) FetchLogs(_ context.Context, inst providers.Instance, _ time.Time) ([]providers.LogEntry, error) {
-	rng := rand.New(rand.NewSource(seedFromID(inst.ID)))
-	levels := []string{"info", "warn", "error", "debug"}
-	messages := []string{
-		"Movie scan completed", "Download grabbed", "Import failed: unknown movie",
-		"Upgrade found for movie", "Refresh movie triggered", "Indexer returned no results",
+// FetchLogs returns recent log entries from Radarr filtered by since.
+func (p *radarrProvider) FetchLogs(ctx context.Context, inst providers.Instance, since time.Time) ([]providers.LogEntry, error) {
+	var resp struct {
+		Records []struct {
+			Time    string `json:"time"`
+			Level   string `json:"level"`
+			Logger  string `json:"logger"`
+			Message string `json:"message"`
+		} `json:"records"`
 	}
-	entries := make([]providers.LogEntry, 30)
-	base := time.Now()
-	for i := range entries {
-		entries[i] = providers.LogEntry{
-			Timestamp: base.Add(-time.Duration(rng.Intn(3600)) * time.Second),
-			Level:     levels[rng.Intn(len(levels))],
-			Source:    "Radarr",
-			Message:   messages[rng.Intn(len(messages))],
+	if err := servarr.GetJSON(ctx, inst, "/api/v3/log?pageSize=200&sortKey=time&sortDirection=descending", &resp); err != nil {
+		return nil, fmt.Errorf("radarr fetch logs: %w", err)
+	}
+	var out []providers.LogEntry
+	for _, rec := range resp.Records {
+		t, _ := time.Parse(time.RFC3339, rec.Time)
+		if t.Before(since) {
+			continue
+		}
+		out = append(out, providers.LogEntry{
+			Timestamp: t,
+			Level:     rec.Level,
+			Source:    rec.Logger,
+			Message:   rec.Message,
+		})
+	}
+	return out, nil
+}
+
+// StreamLogs is not supported for Radarr (no realtime log endpoint).
+func (p *radarrProvider) StreamLogs(_ context.Context, _ providers.Instance) (<-chan providers.LogEntry, error) {
+	return nil, fmt.Errorf("streaming not supported for radarr")
+}
+
+// Collect returns key metrics from Radarr.
+func (p *radarrProvider) Collect(ctx context.Context, inst providers.Instance) ([]providers.Sample, error) {
+	now := time.Now()
+
+	var movies []struct {
+		HasFile   bool `json:"hasFile"`
+		Monitored bool `json:"monitored"`
+	}
+	_ = servarr.GetJSON(ctx, inst, "/api/v3/movie", &movies)
+
+	var queue struct {
+		TotalRecords int `json:"totalRecords"`
+	}
+	_ = servarr.GetJSON(ctx, inst, "/api/v3/queue?pageSize=1", &queue)
+
+	missing := 0
+	for _, m := range movies {
+		if m.Monitored && !m.HasFile {
+			missing++
 		}
 	}
-	return entries, nil
-}
 
-func (r *Radarr) StreamLogs(_ context.Context, _ providers.Instance) (<-chan providers.LogEntry, error) {
-	ch := make(chan providers.LogEntry)
-	close(ch)
-	return ch, nil
-}
-
-func (r *Radarr) Collect(_ context.Context, _ providers.Instance) ([]providers.Sample, error) {
-	now := time.Now()
 	return []providers.Sample{
-		{Metric: "radarr_movies_total", Value: 847, TS: now},
-		{Metric: "radarr_movies_monitored", Value: 721, TS: now},
-		{Metric: "radarr_missing_movies", Value: 33, TS: now},
-		{Metric: "radarr_queue_total", Value: 2, TS: now},
+		{Metric: "radarr_movies_total", Value: float64(len(movies)), TS: now},
+		{Metric: "radarr_queue_total", Value: float64(queue.TotalRecords), TS: now},
+		{Metric: "radarr_missing_movies", Value: float64(missing), TS: now},
 	}, nil
 }
 
-func (r *Radarr) ExportConfig(_ context.Context, _ providers.Instance) (providers.ConfigBlob, error) {
-	return providers.ConfigBlob{
-		ContentType: "application/json",
-		Data:        []byte(`{"qualityProfiles":[],"namingConvention":{},"rootFolders":[]}`),
-	}, nil
+// ExportConfig exports quality profiles and naming config.
+func (p *radarrProvider) ExportConfig(ctx context.Context, inst providers.Instance) (providers.ConfigBlob, error) {
+	var profiles, naming any
+	if err := servarr.GetJSON(ctx, inst, "/api/v3/qualityProfile", &profiles); err != nil {
+		return providers.ConfigBlob{}, fmt.Errorf("radarr export qualityProfile: %w", err)
+	}
+	if err := servarr.GetJSON(ctx, inst, "/api/v3/config/naming", &naming); err != nil {
+		return providers.ConfigBlob{}, fmt.Errorf("radarr export naming: %w", err)
+	}
+	b, err := json.Marshal(map[string]any{"qualityProfiles": profiles, "naming": naming})
+	if err != nil {
+		return providers.ConfigBlob{}, err
+	}
+	return providers.ConfigBlob{ContentType: "application/json", Data: b}, nil
 }
 
-func (r *Radarr) ImportConfig(_ context.Context, _ providers.Instance, _ providers.ConfigBlob) error {
+// ImportConfig restores config from a blob. Full apply deferred to v2.
+func (p *radarrProvider) ImportConfig(_ context.Context, _ providers.Instance, blob providers.ConfigBlob) error {
+	var payload map[string]any
+	if err := json.Unmarshal(blob.Data, &payload); err != nil {
+		return fmt.Errorf("radarr import: invalid blob: %w", err)
+	}
 	return nil
 }
 
-func (r *Radarr) Snapshot(_ context.Context, _ providers.Instance) (providers.SyncState, error) {
+// Snapshot captures quality profiles and naming for sync comparison.
+func (p *radarrProvider) Snapshot(ctx context.Context, inst providers.Instance) (providers.SyncState, error) {
+	var profiles, naming any
+	if err := servarr.GetJSON(ctx, inst, "/api/v3/qualityProfile", &profiles); err != nil {
+		return providers.SyncState{}, fmt.Errorf("radarr snapshot qualityProfile: %w", err)
+	}
+	if err := servarr.GetJSON(ctx, inst, "/api/v3/config/naming", &naming); err != nil {
+		return providers.SyncState{}, fmt.Errorf("radarr snapshot naming: %w", err)
+	}
 	return providers.SyncState{Data: map[string]any{
-		"qualityProfiles": []string{"HD-1080p", "4K-HDR"},
+		"qualityProfiles": profiles,
+		"naming":          naming,
 	}}, nil
 }
 
-func (r *Radarr) Diff(_, _ providers.SyncState) []providers.SyncChange {
-	return []providers.SyncChange{
-		{Field: "qualityProfiles[1].name", OldValue: "4K", NewValue: "4K-HDR"},
+// Diff compares two snapshots and returns field-level changes.
+func (p *radarrProvider) Diff(a, b providers.SyncState) []providers.SyncChange {
+	var changes []providers.SyncChange
+	for k, va := range a.Data {
+		if vb, ok := b.Data[k]; ok {
+			ja, _ := json.Marshal(va)
+			jb, _ := json.Marshal(vb)
+			if string(ja) != string(jb) {
+				changes = append(changes, providers.SyncChange{Field: k, OldValue: va, NewValue: vb})
+			}
+		}
 	}
+	return changes
 }
 
-func (r *Radarr) Apply(_ context.Context, _ providers.Instance, _ []providers.SyncChange) error {
+// Apply pushes sync changes to the target instance. Full apply deferred to v2.
+func (p *radarrProvider) Apply(_ context.Context, _ providers.Instance, _ []providers.SyncChange) error {
 	return nil
-}
-
-func seedFromID(id string) int64 {
-	var h int64 = 17
-	for _, c := range id {
-		h = h*31 + int64(c)
-	}
-	return h
 }

@@ -3,91 +3,140 @@ package sonarr
 
 import (
 	"context"
-	"math/rand"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/t0mer/galactica/internal/providers"
+	"github.com/t0mer/galactica/internal/providers/servarr"
 )
 
-func init() { providers.Register(&Sonarr{}) }
+func init() { providers.Register(&sonarrProvider{}) }
 
-type Sonarr struct{}
+type sonarrProvider struct{}
 
-func (s *Sonarr) Kind() providers.Kind { return providers.KindSonarr }
+func (p *sonarrProvider) Kind() providers.Kind { return providers.KindSonarr }
 
-func (s *Sonarr) TestConnection(_ context.Context, _ providers.Instance) error { return nil }
+// TestConnection calls /api/v3/system/status.
+func (p *sonarrProvider) TestConnection(ctx context.Context, inst providers.Instance) error {
+	var status map[string]any
+	return servarr.GetJSON(ctx, inst, "/api/v3/system/status", &status)
+}
 
-func (s *Sonarr) FetchLogs(_ context.Context, inst providers.Instance, _ time.Time) ([]providers.LogEntry, error) {
-	rng := rand.New(rand.NewSource(seedFromID(inst.ID)))
-	levels := []string{"info", "warn", "error", "debug"}
-	messages := []string{
-		"Series scan completed", "Indexer search failed",
-		"Download grabbed from indexer", "Import failed: no space left on device",
-		"Episode upgraded to better quality", "Refresh series triggered",
-		"Database cleanup completed", "RSS sync completed",
+// FetchLogs returns recent log entries from Sonarr filtered by since.
+func (p *sonarrProvider) FetchLogs(ctx context.Context, inst providers.Instance, since time.Time) ([]providers.LogEntry, error) {
+	var resp struct {
+		Records []struct {
+			Time    string `json:"time"`
+			Level   string `json:"level"`
+			Logger  string `json:"logger"`
+			Message string `json:"message"`
+		} `json:"records"`
 	}
-	entries := make([]providers.LogEntry, 30)
-	base := time.Now()
-	for i := range entries {
-		entries[i] = providers.LogEntry{
-			Timestamp: base.Add(-time.Duration(rng.Intn(3600)) * time.Second),
-			Level:     levels[rng.Intn(len(levels))],
-			Source:    "Sonarr",
-			Message:   messages[rng.Intn(len(messages))],
+	if err := servarr.GetJSON(ctx, inst, "/api/v3/log?pageSize=200&sortKey=time&sortDirection=descending", &resp); err != nil {
+		return nil, fmt.Errorf("sonarr fetch logs: %w", err)
+	}
+	var out []providers.LogEntry
+	for _, rec := range resp.Records {
+		t, _ := time.Parse(time.RFC3339, rec.Time)
+		if t.Before(since) {
+			continue
 		}
+		out = append(out, providers.LogEntry{
+			Timestamp: t,
+			Level:     rec.Level,
+			Source:    rec.Logger,
+			Message:   rec.Message,
+		})
 	}
-	return entries, nil
+	return out, nil
 }
 
-func (s *Sonarr) StreamLogs(_ context.Context, _ providers.Instance) (<-chan providers.LogEntry, error) {
-	ch := make(chan providers.LogEntry)
-	close(ch)
-	return ch, nil
+// StreamLogs is not supported for Sonarr (no realtime log endpoint).
+func (p *sonarrProvider) StreamLogs(_ context.Context, _ providers.Instance) (<-chan providers.LogEntry, error) {
+	return nil, fmt.Errorf("streaming not supported for sonarr")
 }
 
-func (s *Sonarr) Collect(_ context.Context, _ providers.Instance) ([]providers.Sample, error) {
+// Collect returns key metrics from Sonarr.
+func (p *sonarrProvider) Collect(ctx context.Context, inst providers.Instance) ([]providers.Sample, error) {
 	now := time.Now()
+
+	var series []struct{ ID int }
+	_ = servarr.GetJSON(ctx, inst, "/api/v3/series", &series)
+
+	var queue struct {
+		TotalRecords int `json:"totalRecords"`
+	}
+	_ = servarr.GetJSON(ctx, inst, "/api/v3/queue?pageSize=1", &queue)
+
+	var missing struct {
+		TotalRecords int `json:"totalRecords"`
+	}
+	_ = servarr.GetJSON(ctx, inst, "/api/v3/wanted/missing?pageSize=1", &missing)
+
 	return []providers.Sample{
-		{Metric: "sonarr_series_total", Value: 312, TS: now},
-		{Metric: "sonarr_series_monitored", Value: 289, TS: now},
-		{Metric: "sonarr_missing_episodes", Value: 18, TS: now},
-		{Metric: "sonarr_queue_total", Value: 4, TS: now},
+		{Metric: "sonarr_series_total", Value: float64(len(series)), TS: now},
+		{Metric: "sonarr_queue_total", Value: float64(queue.TotalRecords), TS: now},
+		{Metric: "sonarr_missing_episodes", Value: float64(missing.TotalRecords), TS: now},
 	}, nil
 }
 
-func (s *Sonarr) ExportConfig(_ context.Context, _ providers.Instance) (providers.ConfigBlob, error) {
-	return providers.ConfigBlob{
-		ContentType: "application/json",
-		Data:        []byte(`{"qualityProfiles":[],"namingConvention":{},"rootFolders":[]}`),
-	}, nil
+// ExportConfig exports quality profiles and naming config.
+func (p *sonarrProvider) ExportConfig(ctx context.Context, inst providers.Instance) (providers.ConfigBlob, error) {
+	var profiles, naming any
+	if err := servarr.GetJSON(ctx, inst, "/api/v3/qualityProfile", &profiles); err != nil {
+		return providers.ConfigBlob{}, fmt.Errorf("sonarr export qualityProfile: %w", err)
+	}
+	if err := servarr.GetJSON(ctx, inst, "/api/v3/config/naming", &naming); err != nil {
+		return providers.ConfigBlob{}, fmt.Errorf("sonarr export naming: %w", err)
+	}
+	b, err := json.Marshal(map[string]any{"qualityProfiles": profiles, "naming": naming})
+	if err != nil {
+		return providers.ConfigBlob{}, err
+	}
+	return providers.ConfigBlob{ContentType: "application/json", Data: b}, nil
 }
 
-func (s *Sonarr) ImportConfig(_ context.Context, _ providers.Instance, _ providers.ConfigBlob) error {
+// ImportConfig restores config from a blob. Full apply deferred to v2.
+func (p *sonarrProvider) ImportConfig(_ context.Context, _ providers.Instance, blob providers.ConfigBlob) error {
+	var payload map[string]any
+	if err := json.Unmarshal(blob.Data, &payload); err != nil {
+		return fmt.Errorf("sonarr import: invalid blob: %w", err)
+	}
 	return nil
 }
 
-func (s *Sonarr) Snapshot(_ context.Context, _ providers.Instance) (providers.SyncState, error) {
+// Snapshot captures quality profiles and naming for sync comparison.
+func (p *sonarrProvider) Snapshot(ctx context.Context, inst providers.Instance) (providers.SyncState, error) {
+	var profiles, naming any
+	if err := servarr.GetJSON(ctx, inst, "/api/v3/qualityProfile", &profiles); err != nil {
+		return providers.SyncState{}, fmt.Errorf("sonarr snapshot qualityProfile: %w", err)
+	}
+	if err := servarr.GetJSON(ctx, inst, "/api/v3/config/naming", &naming); err != nil {
+		return providers.SyncState{}, fmt.Errorf("sonarr snapshot naming: %w", err)
+	}
 	return providers.SyncState{Data: map[string]any{
-		"qualityProfiles": []string{"HD-1080p", "4K"},
-		"namingFormat":    "{Series} S{season:00}E{episode:00} - {Episode}",
+		"qualityProfiles": profiles,
+		"naming":          naming,
 	}}, nil
 }
 
-func (s *Sonarr) Diff(_, _ providers.SyncState) []providers.SyncChange {
-	return []providers.SyncChange{
-		{Field: "qualityProfiles[0].name", OldValue: "HD-720p", NewValue: "HD-1080p"},
-		{Field: "namingFormat", OldValue: "{Series} - S{season:00}E{episode:00}", NewValue: "{Series} S{season:00}E{episode:00} - {Episode}"},
+// Diff compares two snapshots and returns field-level changes.
+func (p *sonarrProvider) Diff(a, b providers.SyncState) []providers.SyncChange {
+	var changes []providers.SyncChange
+	for k, va := range a.Data {
+		if vb, ok := b.Data[k]; ok {
+			ja, _ := json.Marshal(va)
+			jb, _ := json.Marshal(vb)
+			if string(ja) != string(jb) {
+				changes = append(changes, providers.SyncChange{Field: k, OldValue: va, NewValue: vb})
+			}
+		}
 	}
+	return changes
 }
 
-func (s *Sonarr) Apply(_ context.Context, _ providers.Instance, _ []providers.SyncChange) error {
+// Apply pushes sync changes to the target instance. Full apply deferred to v2.
+func (p *sonarrProvider) Apply(_ context.Context, _ providers.Instance, _ []providers.SyncChange) error {
 	return nil
-}
-
-func seedFromID(id string) int64 {
-	var h int64 = 17
-	for _, c := range id {
-		h = h*31 + int64(c)
-	}
-	return h
 }
