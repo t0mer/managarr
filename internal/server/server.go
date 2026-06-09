@@ -94,6 +94,26 @@ func (s *Server) Start(ctx context.Context, listen string) error {
 		r.Patch("/{id}/status", iss.UpdateStatus)
 	})
 
+	// Backup
+	bkp := &api.BackupHandler{Deps: s.deps}
+	r.Route("/api/v1/backup", func(r chi.Router) {
+		r.Get("/targets", bkp.ListTargets)
+		r.Post("/targets", bkp.CreateTarget)
+		r.Delete("/targets/{id}", bkp.DeleteTarget)
+		r.Post("/run", bkp.RunBackup)
+		r.Get("/targets/{id}/backups", bkp.ListBackups)
+	})
+
+	// Sync
+	syn := &api.SyncHandler{Deps: s.deps}
+	r.Route("/api/v1/sync", func(r chi.Router) {
+		r.Get("/jobs", syn.List)
+		r.Post("/jobs", syn.Create)
+		r.Delete("/jobs/{id}", syn.Delete)
+		r.Post("/jobs/{id}/preview", syn.Preview)
+		r.Post("/jobs/{id}/apply", syn.Apply)
+	})
+
 	r.Handle("/*", spaHandler())
 
 	srv := &http.Server{
