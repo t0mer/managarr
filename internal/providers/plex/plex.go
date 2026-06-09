@@ -3,11 +3,15 @@ package plex
 
 import (
 	"context"
-	"math/rand"
+	"encoding/json"
+	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/t0mer/galactica/internal/providers"
 )
+
+var cli = &http.Client{Timeout: 15 * time.Second}
 
 func init() { providers.Register(&Plex{}) }
 
@@ -15,49 +19,59 @@ type Plex struct{}
 
 func (p *Plex) Kind() providers.Kind { return providers.KindPlex }
 
-func (p *Plex) TestConnection(_ context.Context, _ providers.Instance) error { return nil }
-
-func (p *Plex) FetchLogs(_ context.Context, inst providers.Instance, _ time.Time) ([]providers.LogEntry, error) {
-	rng := rand.New(rand.NewSource(seedFromID(inst.ID)))
-	levels := []string{"info", "warn", "error", "debug"}
-	messages := []string{
-		"Library scan complete", "Transcoder started", "Playback started",
-		"Playback stopped", "Media analysis queued", "Metadata agent updated",
+func (p *Plex) getJSON(ctx context.Context, inst providers.Instance, path string, v any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, inst.BaseURL+path, nil)
+	if err != nil {
+		return err
 	}
-	entries := make([]providers.LogEntry, 20)
-	base := time.Now()
-	for i := range entries {
-		entries[i] = providers.LogEntry{
-			Timestamp: base.Add(-time.Duration(rng.Intn(3600)) * time.Second),
-			Level:     levels[rng.Intn(len(levels))],
-			Source:    "Plex",
-			Message:   messages[rng.Intn(len(messages))],
-		}
+	req.Header.Set("X-Plex-Token", inst.APIKey)
+	req.Header.Set("Accept", "application/json")
+	resp, err := cli.Do(req)
+	if err != nil {
+		return err
 	}
-	return entries, nil
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("plex API: HTTP %d for %s", resp.StatusCode, path)
+	}
+	return json.NewDecoder(resp.Body).Decode(v)
 }
 
+func (p *Plex) TestConnection(ctx context.Context, inst providers.Instance) error {
+	var status map[string]any
+	return p.getJSON(ctx, inst, "/", &status)
+}
+
+// FetchLogs returns an empty slice; Plex does not expose a structured log API.
+func (p *Plex) FetchLogs(_ context.Context, _ providers.Instance, _ time.Time) ([]providers.LogEntry, error) {
+	return nil, nil
+}
+
+// StreamLogs is not supported by Plex.
 func (p *Plex) StreamLogs(_ context.Context, _ providers.Instance) (<-chan providers.LogEntry, error) {
-	ch := make(chan providers.LogEntry)
-	close(ch)
-	return ch, nil
+	return nil, fmt.Errorf("log streaming not supported for plex")
 }
 
-func (p *Plex) Collect(_ context.Context, _ providers.Instance) ([]providers.Sample, error) {
+// Collect gathers active session count and library section count from the Plex API.
+func (p *Plex) Collect(ctx context.Context, inst providers.Instance) ([]providers.Sample, error) {
 	now := time.Now()
-	return []providers.Sample{
-		{Metric: "plex_movies_total", Value: 1240, TS: now},
-		{Metric: "plex_shows_total", Value: 87, TS: now},
-		{Metric: "plex_music_artists_total", Value: 312, TS: now},
-		{Metric: "plex_sessions_active", Value: 2, TS: now},
-		{Metric: "plex_transcodes_active", Value: 1, TS: now},
-	}, nil
-}
 
-func seedFromID(id string) int64 {
-	var h int64 = 17
-	for _, c := range id {
-		h = h*31 + int64(c)
+	var sessions struct {
+		MediaContainer struct {
+			Size int `json:"size"`
+		} `json:"MediaContainer"`
 	}
-	return h
+	_ = p.getJSON(ctx, inst, "/status/sessions", &sessions)
+
+	var sections struct {
+		MediaContainer struct {
+			Size int `json:"size"`
+		} `json:"MediaContainer"`
+	}
+	_ = p.getJSON(ctx, inst, "/library/sections", &sections)
+
+	return []providers.Sample{
+		{Metric: "plex_active_sessions", Value: float64(sessions.MediaContainer.Size), TS: now},
+		{Metric: "plex_library_sections", Value: float64(sections.MediaContainer.Size), TS: now},
+	}, nil
 }
