@@ -29,7 +29,7 @@ const patch = <T>(path: string, body?: unknown) => request<T>('PATCH', path, bod
 const del = (path: string) => request<void>('DELETE', path)
 
 export const api = {
-  health: () => fetch('/api/health').then(r => r.json() as Promise<HealthResponse>),
+  health: () => fetch('/api/v1/health').then(r => r.json() as Promise<HealthResponse>),
   version: () => fetch('/version').then(r => r.json() as Promise<VersionResponse>),
 
   instances: {
