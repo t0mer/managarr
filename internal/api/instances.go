@@ -81,7 +81,11 @@ func (h *InstancesHandler) Create(w http.ResponseWriter, r *http.Request) {
 			_ = storage.PutSecret(h.DB, id, "api_key", enc)
 		}
 	}
-	row, _ := storage.GetInstance(h.DB, id)
+	row, err2 := storage.GetInstance(h.DB, id)
+	if err2 != nil || row == nil {
+		jsonError(w, http.StatusInternalServerError, "instance created but could not be retrieved")
+		return
+	}
 	jsonResponse(w, http.StatusCreated, toInstanceResp(*row))
 }
 
@@ -121,7 +125,11 @@ func (h *InstancesHandler) Update(w http.ResponseWriter, r *http.Request) {
 			_ = storage.PutSecret(h.DB, id, "api_key", enc)
 		}
 	}
-	row, _ = storage.GetInstance(h.DB, id)
+	row, err = storage.GetInstance(h.DB, id)
+	if err != nil || row == nil {
+		jsonError(w, http.StatusInternalServerError, "instance updated but could not be retrieved")
+		return
+	}
 	jsonResponse(w, http.StatusOK, toInstanceResp(*row))
 }
 
