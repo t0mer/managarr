@@ -99,6 +99,13 @@ export interface SyncPreview {
   count: number
 }
 
+export interface LidarrStats {
+  artists_total: number
+  albums_total: number
+  queue_total: number
+  missing_albums: number
+}
+
 export interface SonarrStats {
   series_total: number
   queue_total: number

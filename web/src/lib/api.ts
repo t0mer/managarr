@@ -4,7 +4,7 @@ import type {
   Instance, LogEntry, Issue, IssueStatus,
   MetricSeries, NotifyChannel, BackupTarget, Backup,
   SyncJob, SyncPreview, PlexStats, DelugeStats, JackettStats,
-  SonarrStats, RadarrStats
+  SonarrStats, RadarrStats, LidarrStats
 } from './types'
 
 const BASE = '/api/v1'
@@ -138,5 +138,9 @@ export const api = {
 
   radarr: {
     stats: (id: string) => get<RadarrStats>(`/instances/${id}/radarr/stats`),
+  },
+
+  lidarr: {
+    stats: (id: string) => get<LidarrStats>(`/instances/${id}/lidarr/stats`),
   },
 }

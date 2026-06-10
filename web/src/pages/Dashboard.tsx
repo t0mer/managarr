@@ -6,7 +6,7 @@ import {
 } from 'recharts'
 import { Film, Tv, Activity, Download, Upload, ArrowDownUp, CheckCircle2, XCircle, MinusCircle } from 'lucide-react'
 import { api } from '../lib/api'
-import type { Instance, Issue, MetricSeries, PlexStats, DelugeStats, JackettStats, JackettIndexer, SonarrStats, RadarrStats } from '../lib/types'
+import type { Instance, Issue, MetricSeries, PlexStats, DelugeStats, JackettStats, JackettIndexer, SonarrStats, RadarrStats, LidarrStats } from '../lib/types'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -440,6 +440,50 @@ function RadarrInstanceCard({ instance }: { instance: Instance }) {
   return <RadarrPanel stats={stats} name={instance.name} />
 }
 
+function LidarrPanel({ stats, name }: { stats: LidarrStats; name: string }) {
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] p-6 space-y-4">
+      <div className="flex items-center gap-2">
+        <KindBadge kind="lidarr" />
+        <span className="font-semibold">{name}</span>
+      </div>
+      <div className="grid grid-cols-4 gap-3">
+        <ServarrStatBox label="Artists" value={stats.artists_total} />
+        <ServarrStatBox label="Albums" value={stats.albums_total} />
+        <ServarrStatBox
+          label="In Queue"
+          value={stats.queue_total}
+          accent={stats.queue_total > 0 ? 'text-blue-500' : undefined}
+        />
+        <ServarrStatBox
+          label="Missing"
+          value={stats.missing_albums}
+          accent={stats.missing_albums > 0 ? 'text-red-500' : 'text-green-500'}
+        />
+      </div>
+    </div>
+  )
+}
+
+function LidarrInstanceCard({ instance }: { instance: Instance }) {
+  const { data: stats, isLoading, isError } = useQuery<LidarrStats>({
+    queryKey: ['lidarr-stats', instance.id],
+    queryFn: () => api.lidarr.stats(instance.id),
+    refetchInterval: 60_000,
+    retry: 1,
+    enabled: instance.enabled,
+  })
+
+  if (!instance.enabled) return <DisabledCard name={instance.name} kind={instance.kind} />
+  if (isLoading) return <div className="rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] p-6 h-28 animate-pulse" />
+  if (isError || !stats) return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] p-5">
+      <p className="text-sm opacity-50">Could not load Lidarr stats for <span className="font-medium">{instance.name}</span></p>
+    </div>
+  )
+  return <LidarrPanel stats={stats} name={instance.name} />
+}
+
 // ── Jackett ──────────────────────────────────────────────────────────────────
 
 function IndexerStatusIcon({ status }: { status: JackettIndexer['test_status'] }) {
@@ -696,6 +740,7 @@ export function Dashboard() {
 
   const sonarrInstances = instances.filter((i) => i.kind === 'sonarr')
   const radarrInstances = instances.filter((i) => i.kind === 'radarr')
+  const lidarrInstances = instances.filter((i) => i.kind === 'lidarr')
   const jackettInstances = instances.filter((i) => i.kind === 'jackett')
   const delugeInstances = instances.filter((i) => i.kind === 'deluge')
   const plexInstances = instances.filter((i) => i.kind === 'plex')
@@ -786,6 +831,16 @@ export function Dashboard() {
           <h2 className="text-base font-semibold">Radarr</h2>
           {radarrInstances.map((inst) => (
             <RadarrInstanceCard key={inst.id} instance={inst} />
+          ))}
+        </div>
+      )}
+
+      {/* Lidarr */}
+      {lidarrInstances.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-base font-semibold">Lidarr</h2>
+          {lidarrInstances.map((inst) => (
+            <LidarrInstanceCard key={inst.id} instance={inst} />
           ))}
         </div>
       )}
