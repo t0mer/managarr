@@ -15,31 +15,34 @@ import (
 	"github.com/t0mer/galactica/internal/storage"
 )
 
-// storeAPIKey encrypts key with secretKey and stores it, or stores it as
-// plaintext when no secretKey is configured (with a warning).
-func storeAPIKey(db *sql.DB, secretKey, instanceID, apiKey string, log *slog.Logger) error {
+// storeSecret encrypts value and stores it under key for the instance.
+// When no secretKey is configured it stores as plaintext with a warning.
+func storeSecret(db *sql.DB, secretKey, instanceID, key, value string, log *slog.Logger) error {
 	var toStore []byte
 	if secretKey != "" {
-		enc, err := storage.Encrypt([]byte(apiKey), secretKey)
+		enc, err := storage.Encrypt([]byte(value), secretKey)
 		if err != nil {
 			return err
 		}
 		toStore = enc
 	} else {
-		log.Warn("GALACTICA_SECRET_KEY not set — storing API key as plaintext; set a secret key for encrypted storage")
-		toStore = []byte(apiKey)
+		log.Warn("GALACTICA_SECRET_KEY not set — storing secret as plaintext; set a secret key for encrypted storage",
+			"key", key)
+		toStore = []byte(value)
 	}
-	return storage.PutSecret(db, instanceID, "api_key", toStore)
+	return storage.PutSecret(db, instanceID, key, toStore)
 }
 
 // InstancesHandler handles /api/v1/instances routes.
 type InstancesHandler struct{ *Deps }
 
 type createInstanceReq struct {
-	Kind    string `json:"kind"`
-	Name    string `json:"name"`
-	BaseURL string `json:"base_url"`
-	APIKey  string `json:"api_key"`
+	Kind     string `json:"kind"`
+	Name     string `json:"name"`
+	BaseURL  string `json:"base_url"`
+	APIKey   string `json:"api_key"`
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 type instanceResp struct {
@@ -95,8 +98,18 @@ func (h *InstancesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.APIKey != "" {
-		if err := storeAPIKey(h.DB, h.SecretKey, id, req.APIKey, h.Log); err != nil {
-			h.Log.Warn("storing api key", "instance_id", id, "error", err)
+		if err := storeSecret(h.DB, h.SecretKey, id, "api_key", req.APIKey, h.Log); err != nil {
+			h.Log.Warn("storing api_key", "instance_id", id, "error", err)
+		}
+	}
+	if req.Username != "" {
+		if err := storeSecret(h.DB, h.SecretKey, id, "username", req.Username, h.Log); err != nil {
+			h.Log.Warn("storing username", "instance_id", id, "error", err)
+		}
+	}
+	if req.Password != "" {
+		if err := storeSecret(h.DB, h.SecretKey, id, "password", req.Password, h.Log); err != nil {
+			h.Log.Warn("storing password", "instance_id", id, "error", err)
 		}
 	}
 	row, err2 := storage.GetInstance(h.DB, id)
@@ -138,8 +151,18 @@ func (h *InstancesHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.APIKey != "" {
-		if err := storeAPIKey(h.DB, h.SecretKey, id, req.APIKey, h.Log); err != nil {
-			h.Log.Warn("storing api key", "instance_id", id, "error", err)
+		if err := storeSecret(h.DB, h.SecretKey, id, "api_key", req.APIKey, h.Log); err != nil {
+			h.Log.Warn("storing api_key", "instance_id", id, "error", err)
+		}
+	}
+	if req.Username != "" {
+		if err := storeSecret(h.DB, h.SecretKey, id, "username", req.Username, h.Log); err != nil {
+			h.Log.Warn("storing username", "instance_id", id, "error", err)
+		}
+	}
+	if req.Password != "" {
+		if err := storeSecret(h.DB, h.SecretKey, id, "password", req.Password, h.Log); err != nil {
+			h.Log.Warn("storing password", "instance_id", id, "error", err)
 		}
 	}
 	row, err = storage.GetInstance(h.DB, id)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/t0mer/galactica/internal/providers"
@@ -65,11 +66,20 @@ func DownloadLatestBackup(ctx context.Context, inst providers.Instance, apiBase 
 		}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, inst.BaseURL+latest.Path, nil)
+	// The /backup/ path is served by the *arr web layer, not the API layer.
+	// It accepts Basic Auth (username:password) or an apiKey query parameter.
+	// Prefer Basic Auth when credentials are provided; fall back to apiKey param.
+	downloadURL := inst.BaseURL + latest.Path
+	if inst.Username == "" {
+		downloadURL += "?apiKey=" + inst.APIKey
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
 		return providers.ConfigBlob{}, fmt.Errorf("building download request: %w", err)
 	}
-	req.Header.Set("X-Api-Key", inst.APIKey)
+	if inst.Username != "" {
+		req.SetBasicAuth(inst.Username, inst.Password)
+	}
 
 	resp, err := backupCli.Do(req)
 	if err != nil {
@@ -85,9 +95,14 @@ func DownloadLatestBackup(ctx context.Context, inst providers.Instance, apiBase 
 		return providers.ConfigBlob{}, fmt.Errorf("reading backup data: %w", err)
 	}
 
-	// Validate size if the listing reported one.
-	if latest.Size > 0 && int64(len(data)) != latest.Size {
-		return providers.ConfigBlob{}, fmt.Errorf("backup size mismatch: downloaded %d bytes, expected %d", len(data), latest.Size)
+	if len(data) == 0 {
+		return providers.ConfigBlob{}, fmt.Errorf("download returned empty body")
+	}
+
+	// Reject obvious non-binary responses (HTML error/login pages from
+	// unauthenticated or misconfigured requests).
+	if ct := resp.Header.Get("Content-Type"); strings.Contains(ct, "text/html") {
+		return providers.ConfigBlob{}, fmt.Errorf("download returned HTML (content-type: %s) — check API key and base URL", ct)
 	}
 
 	return providers.ConfigBlob{

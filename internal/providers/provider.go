@@ -25,11 +25,13 @@ const (
 // Instance represents one running installation of a managed app.
 // Secrets are resolved from storage at call time and never serialised in API responses.
 type Instance struct {
-	ID      string
-	Kind    Kind
-	Name    string
-	BaseURL string
-	APIKey  string // resolved from secrets table, never in API responses
+	ID       string
+	Kind     Kind
+	Name     string
+	BaseURL  string
+	APIKey   string // resolved from secrets table, never in API responses
+	Username string // optional Basic-Auth username (used for *arr web-layer routes)
+	Password string // optional Basic-Auth password
 }
 
 // LogEntry is a normalised log line from any provider.
