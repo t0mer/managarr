@@ -99,6 +99,22 @@ export interface SyncPreview {
   count: number
 }
 
+export interface PlexLibrary {
+  key: string
+  title: string
+  type: 'movie' | 'show'
+  count?: number    // movie libraries
+  shows?: number    // show libraries
+  seasons?: number  // show libraries
+  episodes?: number // show libraries
+}
+
+export interface PlexStats {
+  server_name: string
+  active_sessions: number
+  libraries: PlexLibrary[]
+}
+
 export interface HealthResponse {
   status: string
   version: string

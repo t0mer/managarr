@@ -3,7 +3,7 @@ import type {
   HealthResponse, VersionResponse,
   Instance, LogEntry, Issue, IssueStatus,
   MetricSeries, NotifyChannel, BackupTarget, Backup,
-  SyncJob, SyncPreview
+  SyncJob, SyncPreview, PlexStats
 } from './types'
 
 const BASE = '/api/v1'
@@ -115,5 +115,9 @@ export const api = {
     deleteJob: (id: string) => del(`/sync/jobs/${id}`),
     preview: (id: string) => post<SyncPreview>(`/sync/jobs/${id}/preview`),
     apply: (id: string) => post<{ applied: number }>(`/sync/jobs/${id}/apply`),
+  },
+
+  plex: {
+    stats: (id: string) => get<PlexStats>(`/instances/${id}/plex/stats`),
   },
 }

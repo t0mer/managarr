@@ -4,8 +4,9 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip,
   ResponsiveContainer, Legend,
 } from 'recharts'
+import { Film, Tv, Activity } from 'lucide-react'
 import { api } from '../lib/api'
-import type { Instance, Issue, MetricSeries } from '../lib/types'
+import type { Instance, Issue, MetricSeries, PlexStats } from '../lib/types'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -202,6 +203,124 @@ function MetricChart({
   )
 }
 
+function PlexLibraryGrid({ stats }: { stats: PlexStats }) {
+  const movies = stats.libraries.filter((l) => l.type === 'movie')
+  const shows = stats.libraries.filter((l) => l.type === 'show')
+
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold">{stats.server_name || 'Plex'}</h2>
+          <p className="text-xs opacity-50 mt-0.5">Library Statistics</p>
+        </div>
+        <div className="flex items-center gap-2 bg-green-500/10 text-green-500 rounded-lg px-3 py-1.5">
+          <Activity size={14} />
+          <span className="text-sm font-semibold">{stats.active_sessions}</span>
+          <span className="text-xs opacity-80">active stream{stats.active_sessions !== 1 ? 's' : ''}</span>
+        </div>
+      </div>
+
+      {/* Movie Libraries */}
+      {movies.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold opacity-60 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Film size={13} />
+            Movie Libraries
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {movies.map((lib) => (
+              <div
+                key={lib.key}
+                className="rounded-lg bg-[var(--bg)] border border-[var(--border)] p-3 flex flex-col gap-1"
+              >
+                <div className="flex items-center gap-1.5 text-orange-400">
+                  <Film size={14} />
+                  <span className="text-xs font-medium truncate opacity-80">{lib.title}</span>
+                </div>
+                <p className="text-2xl font-bold">{lib.count ?? 0}</p>
+                <p className="text-xs opacity-40">movies</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TV Show Libraries */}
+      {shows.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold opacity-60 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Tv size={13} />
+            TV Show Libraries
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {shows.map((lib) => (
+              <div
+                key={lib.key}
+                className="rounded-lg bg-[var(--bg)] border border-[var(--border)] p-3 flex flex-col gap-2"
+              >
+                <div className="flex items-center gap-1.5 text-violet-400">
+                  <Tv size={14} />
+                  <span className="text-xs font-medium truncate opacity-80">{lib.title}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1 text-center">
+                  <div>
+                    <p className="text-lg font-bold">{lib.shows ?? 0}</p>
+                    <p className="text-xs opacity-40">shows</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold">{lib.seasons ?? 0}</p>
+                    <p className="text-xs opacity-40">seasons</p>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold">{lib.episodes ?? 0}</p>
+                    <p className="text-xs opacity-40">episodes</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {movies.length === 0 && shows.length === 0 && (
+        <p className="text-sm opacity-40 text-center py-4">No libraries found</p>
+      )}
+    </div>
+  )
+}
+
+function PlexInstanceCard({ instance }: { instance: Instance }) {
+  const { data: stats, isLoading, isError } = useQuery<PlexStats>({
+    queryKey: ['plex-stats', instance.id],
+    queryFn: () => api.plex.stats(instance.id),
+    refetchInterval: 60_000,
+    retry: 1,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] p-6 animate-pulse">
+        <div className="h-4 w-32 bg-[var(--border)] rounded mb-4" />
+        <div className="h-24 bg-[var(--border)] rounded" />
+      </div>
+    )
+  }
+
+  if (isError || !stats) {
+    return (
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] p-6">
+        <p className="text-sm opacity-50">
+          Could not load Plex stats for <span className="font-medium">{instance.name}</span>
+        </p>
+      </div>
+    )
+  }
+
+  return <PlexLibraryGrid stats={stats} />
+}
+
 // ── main page ─────────────────────────────────────────────────────────────────
 
 export function Dashboard() {
@@ -210,6 +329,8 @@ export function Dashboard() {
     queryFn: () => api.instances.list(),
     refetchInterval: 60_000,
   })
+
+  const plexInstances = instances.filter((i) => i.kind === 'plex' && i.enabled)
 
   const { data: openIssues = [] } = useQuery<Issue[]>({
     queryKey: ['issues', 'open'],
@@ -280,6 +401,16 @@ export function Dashboard() {
         <h2 className="text-base font-semibold mb-4">Registered Instances</h2>
         <InstanceTable instances={instances} />
       </div>
+
+      {/* Plex library stats */}
+      {plexInstances.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-base font-semibold">Plex Media Servers</h2>
+          {plexInstances.map((inst) => (
+            <PlexInstanceCard key={inst.id} instance={inst} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
