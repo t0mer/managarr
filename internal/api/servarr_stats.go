@@ -122,6 +122,89 @@ func (h *ServarrStatsHandler) RadarrStats(w http.ResponseWriter, r *http.Request
 	jsonResponse(w, http.StatusOK, resp)
 }
 
+// ── Lidarr ────────────────────────────────────────────────────────────────────
+
+type lidarrStatsResp struct {
+	ArtistsTotal  int `json:"artists_total"`
+	AlbumsTotal   int `json:"albums_total"`
+	QueueTotal    int `json:"queue_total"`
+	MissingAlbums int `json:"missing_albums"`
+}
+
+// LidarrStats handles GET /api/v1/instances/{id}/lidarr/stats.
+func (h *ServarrStatsHandler) LidarrStats(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	inst, err := h.resolve(r.Context(), id)
+	if err != nil {
+		jsonError(w, http.StatusNotFound, "instance not found")
+		return
+	}
+	if inst.Kind != providers.KindLidarr {
+		jsonError(w, http.StatusBadRequest, "instance is not Lidarr")
+		return
+	}
+
+	resp, err := fetchLidarrStats(r.Context(), inst)
+	if err != nil {
+		jsonError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	jsonResponse(w, http.StatusOK, resp)
+}
+
+func fetchLidarrStats(ctx context.Context, inst providers.Instance) (*lidarrStatsResp, error) {
+	var (
+		mu       sync.Mutex
+		wg       sync.WaitGroup
+		firstErr error
+		resp     lidarrStatsResp
+	)
+
+	set := func(fn func()) {
+		wg.Add(1)
+		go func() { defer wg.Done(); fn() }()
+	}
+
+	set(func() {
+		var artists []struct{}
+		if err := servarr.GetJSON(ctx, inst, "/api/v1/artist", &artists); err != nil {
+			mu.Lock(); if firstErr == nil { firstErr = err }; mu.Unlock()
+			return
+		}
+		mu.Lock(); resp.ArtistsTotal = len(artists); mu.Unlock()
+	})
+
+	set(func() {
+		var albums struct{ TotalRecords int `json:"totalRecords"` }
+		if err := servarr.GetJSON(ctx, inst, "/api/v1/album?pageSize=1", &albums); err != nil {
+			return
+		}
+		mu.Lock(); resp.AlbumsTotal = albums.TotalRecords; mu.Unlock()
+	})
+
+	set(func() {
+		var queue struct{ TotalRecords int `json:"totalRecords"` }
+		if err := servarr.GetJSON(ctx, inst, "/api/v1/queue?pageSize=1", &queue); err != nil {
+			return
+		}
+		mu.Lock(); resp.QueueTotal = queue.TotalRecords; mu.Unlock()
+	})
+
+	set(func() {
+		var missing struct{ TotalRecords int `json:"totalRecords"` }
+		if err := servarr.GetJSON(ctx, inst, "/api/v1/wanted/missing?pageSize=1", &missing); err != nil {
+			return
+		}
+		mu.Lock(); resp.MissingAlbums = missing.TotalRecords; mu.Unlock()
+	})
+
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	return &resp, nil
+}
+
 func fetchRadarrStats(ctx context.Context, inst providers.Instance) (*radarrStatsResp, error) {
 	var (
 		mu       sync.Mutex

@@ -131,6 +131,7 @@ func (s *Server) Start(ctx context.Context, listen string) error {
 	servarrStats := &api.ServarrStatsHandler{Deps: s.deps}
 	r.Get("/api/v1/instances/{id}/sonarr/stats", servarrStats.SonarrStats)
 	r.Get("/api/v1/instances/{id}/radarr/stats", servarrStats.RadarrStats)
+	r.Get("/api/v1/instances/{id}/lidarr/stats", servarrStats.LidarrStats)
 
 	r.Handle("/*", spaHandler())
 
