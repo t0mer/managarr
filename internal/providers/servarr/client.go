@@ -38,6 +38,9 @@ func GetJSON(ctx context.Context, inst providers.Instance, path string, v any) e
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("GET %s: HTTP %d", path, resp.StatusCode)
 	}
+	if ct := resp.Header.Get("Content-Type"); strings.Contains(ct, "text/html") {
+		return fmt.Errorf("GET %s: got HTML response (authentication required — add username/password to instance)", path)
+	}
 	return json.NewDecoder(resp.Body).Decode(v)
 }
 
