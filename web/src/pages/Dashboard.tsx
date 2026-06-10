@@ -6,7 +6,7 @@ import {
 } from 'recharts'
 import { Film, Tv, Activity, Download, Upload, ArrowDownUp, CheckCircle2, XCircle, MinusCircle } from 'lucide-react'
 import { api } from '../lib/api'
-import type { Instance, Issue, MetricSeries, PlexStats, DelugeStats, JackettStats, JackettIndexer } from '../lib/types'
+import type { Instance, Issue, MetricSeries, PlexStats, DelugeStats, JackettStats, JackettIndexer, SonarrStats, RadarrStats } from '../lib/types'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -334,6 +334,112 @@ function PlexInstanceCard({ instance }: { instance: Instance }) {
   return <PlexLibraryGrid stats={stats} />
 }
 
+// ── Sonarr / Radarr ──────────────────────────────────────────────────────────
+
+function ServarrStatBox({
+  label,
+  value,
+  accent,
+}: {
+  label: string
+  value: number
+  accent?: string
+}) {
+  return (
+    <div className="rounded-lg bg-[var(--bg)] border border-[var(--border)] p-3 text-center">
+      <p className={`text-2xl font-bold ${accent ?? 'text-[var(--fg)]'}`}>{value}</p>
+      <p className="text-xs opacity-50 mt-0.5">{label}</p>
+    </div>
+  )
+}
+
+function SonarrPanel({ stats, name }: { stats: SonarrStats; name: string }) {
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] p-6 space-y-4">
+      <div className="flex items-center gap-2">
+        <KindBadge kind="sonarr" />
+        <span className="font-semibold">{name}</span>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <ServarrStatBox label="Series" value={stats.series_total} />
+        <ServarrStatBox
+          label="In Queue"
+          value={stats.queue_total}
+          accent={stats.queue_total > 0 ? 'text-blue-500' : undefined}
+        />
+        <ServarrStatBox
+          label="Missing Episodes"
+          value={stats.missing_episodes}
+          accent={stats.missing_episodes > 0 ? 'text-red-500' : 'text-green-500'}
+        />
+      </div>
+    </div>
+  )
+}
+
+function RadarrPanel({ stats, name }: { stats: RadarrStats; name: string }) {
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] p-6 space-y-4">
+      <div className="flex items-center gap-2">
+        <KindBadge kind="radarr" />
+        <span className="font-semibold">{name}</span>
+      </div>
+      <div className="grid grid-cols-4 gap-3">
+        <ServarrStatBox label="Movies" value={stats.movies_total} />
+        <ServarrStatBox label="On Disk" value={stats.movies_on_disk} accent="text-green-500" />
+        <ServarrStatBox
+          label="Missing"
+          value={stats.missing_movies}
+          accent={stats.missing_movies > 0 ? 'text-red-500' : 'text-green-500'}
+        />
+        <ServarrStatBox
+          label="In Queue"
+          value={stats.queue_total}
+          accent={stats.queue_total > 0 ? 'text-blue-500' : undefined}
+        />
+      </div>
+    </div>
+  )
+}
+
+function SonarrInstanceCard({ instance }: { instance: Instance }) {
+  const { data: stats, isLoading, isError } = useQuery<SonarrStats>({
+    queryKey: ['sonarr-stats', instance.id],
+    queryFn: () => api.sonarr.stats(instance.id),
+    refetchInterval: 60_000,
+    retry: 1,
+    enabled: instance.enabled,
+  })
+
+  if (!instance.enabled) return <DisabledCard name={instance.name} kind={instance.kind} />
+  if (isLoading) return <div className="rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] p-6 h-28 animate-pulse" />
+  if (isError || !stats) return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] p-5">
+      <p className="text-sm opacity-50">Could not load Sonarr stats for <span className="font-medium">{instance.name}</span></p>
+    </div>
+  )
+  return <SonarrPanel stats={stats} name={instance.name} />
+}
+
+function RadarrInstanceCard({ instance }: { instance: Instance }) {
+  const { data: stats, isLoading, isError } = useQuery<RadarrStats>({
+    queryKey: ['radarr-stats', instance.id],
+    queryFn: () => api.radarr.stats(instance.id),
+    refetchInterval: 60_000,
+    retry: 1,
+    enabled: instance.enabled,
+  })
+
+  if (!instance.enabled) return <DisabledCard name={instance.name} kind={instance.kind} />
+  if (isLoading) return <div className="rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] p-6 h-28 animate-pulse" />
+  if (isError || !stats) return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] p-5">
+      <p className="text-sm opacity-50">Could not load Radarr stats for <span className="font-medium">{instance.name}</span></p>
+    </div>
+  )
+  return <RadarrPanel stats={stats} name={instance.name} />
+}
+
 // ── Jackett ──────────────────────────────────────────────────────────────────
 
 function IndexerStatusIcon({ status }: { status: JackettIndexer['test_status'] }) {
@@ -588,9 +694,11 @@ export function Dashboard() {
     refetchInterval: 60_000,
   })
 
-  const plexInstances = instances.filter((i) => i.kind === 'plex')
-  const delugeInstances = instances.filter((i) => i.kind === 'deluge')
+  const sonarrInstances = instances.filter((i) => i.kind === 'sonarr')
+  const radarrInstances = instances.filter((i) => i.kind === 'radarr')
   const jackettInstances = instances.filter((i) => i.kind === 'jackett')
+  const delugeInstances = instances.filter((i) => i.kind === 'deluge')
+  const plexInstances = instances.filter((i) => i.kind === 'plex')
 
   const { data: openIssues = [] } = useQuery<Issue[]>({
     queryKey: ['issues', 'open'],
@@ -661,6 +769,26 @@ export function Dashboard() {
         <h2 className="text-base font-semibold mb-4">Registered Instances</h2>
         <InstanceTable instances={instances} />
       </div>
+
+      {/* Sonarr */}
+      {sonarrInstances.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-base font-semibold">Sonarr</h2>
+          {sonarrInstances.map((inst) => (
+            <SonarrInstanceCard key={inst.id} instance={inst} />
+          ))}
+        </div>
+      )}
+
+      {/* Radarr */}
+      {radarrInstances.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-base font-semibold">Radarr</h2>
+          {radarrInstances.map((inst) => (
+            <RadarrInstanceCard key={inst.id} instance={inst} />
+          ))}
+        </div>
+      )}
 
       {/* Jackett indexers */}
       {jackettInstances.length > 0 && (

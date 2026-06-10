@@ -99,6 +99,19 @@ export interface SyncPreview {
   count: number
 }
 
+export interface SonarrStats {
+  series_total: number
+  queue_total: number
+  missing_episodes: number
+}
+
+export interface RadarrStats {
+  movies_total: number
+  movies_on_disk: number
+  missing_movies: number
+  queue_total: number
+}
+
 export interface JackettIndexer {
   id: string
   name: string

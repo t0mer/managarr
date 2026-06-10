@@ -3,7 +3,8 @@ import type {
   HealthResponse, VersionResponse,
   Instance, LogEntry, Issue, IssueStatus,
   MetricSeries, NotifyChannel, BackupTarget, Backup,
-  SyncJob, SyncPreview, PlexStats, DelugeStats, JackettStats
+  SyncJob, SyncPreview, PlexStats, DelugeStats, JackettStats,
+  SonarrStats, RadarrStats
 } from './types'
 
 const BASE = '/api/v1'
@@ -129,5 +130,13 @@ export const api = {
     stats: (id: string) => get<JackettStats>(`/instances/${id}/jackett/stats`),
     setMonitored: (instanceId: string, indexerId: string, monitored: boolean) =>
       patch<void>(`/instances/${instanceId}/jackett/indexers/${encodeURIComponent(indexerId)}`, { monitored }),
+  },
+
+  sonarr: {
+    stats: (id: string) => get<SonarrStats>(`/instances/${id}/sonarr/stats`),
+  },
+
+  radarr: {
+    stats: (id: string) => get<RadarrStats>(`/instances/${id}/radarr/stats`),
   },
 }
