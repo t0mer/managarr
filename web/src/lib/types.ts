@@ -99,6 +99,23 @@ export interface SyncPreview {
   count: number
 }
 
+export interface JackettIndexer {
+  id: string
+  name: string
+  configured: boolean
+  monitored: boolean
+  test_status: 'ok' | 'error' | 'skipped'
+  test_error?: string
+}
+
+export interface JackettStats {
+  indexers: JackettIndexer[]
+  total: number
+  configured: number
+  ok: number
+  error: number
+}
+
 export interface DelugeStats {
   download_rate: number
   upload_rate: number

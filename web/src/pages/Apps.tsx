@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { CheckCircle2, XCircle, MinusCircle } from 'lucide-react'
 import { api } from '../lib/api'
-import type { Instance, ProviderKind } from '../lib/types'
+import type { Instance, ProviderKind, JackettStats, JackettIndexer } from '../lib/types'
 
 const KIND_COLORS: Record<ProviderKind, string> = {
   sonarr: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
@@ -163,6 +164,139 @@ function Modal({ title, onClose, onSubmit, submitLabel, submitting, children }: 
   )
 }
 
+// ─── Jackett indexer modal ──────────────────────────────────────────────────
+
+function IndexerStatusIcon({ status }: { status: JackettIndexer['test_status'] }) {
+  if (status === 'ok') return <CheckCircle2 size={14} className="text-green-500 shrink-0" />
+  if (status === 'error') return <XCircle size={14} className="text-red-500 shrink-0" />
+  return <MinusCircle size={14} className="text-gray-400 shrink-0" />
+}
+
+function JackettIndexersModal({ instance, onClose }: { instance: Instance; onClose: () => void }) {
+  const qc = useQueryClient()
+
+  const { data: stats, isLoading, isError, refetch, isFetching } = useQuery<JackettStats>({
+    queryKey: ['jackett-stats', instance.id],
+    queryFn: () => api.jackett.stats(instance.id),
+    retry: 1,
+  })
+
+  const toggleMut = useMutation({
+    mutationFn: ({ indexerId, monitored }: { indexerId: string; monitored: boolean }) =>
+      api.jackett.setMonitored(instance.id, indexerId, monitored),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['jackett-stats', instance.id] }),
+  })
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="w-full max-w-2xl rounded-xl bg-white dark:bg-gray-900 shadow-2xl flex flex-col max-h-[80vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 px-6 py-4 shrink-0">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Jackett Indexers — {instance.name}
+            </h2>
+            {stats && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {stats.configured} configured · {stats.ok} OK
+                {stats.error > 0 && ` · ${stats.error} error`}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="rounded px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 disabled:opacity-50 transition-colors"
+            >
+              {isFetching ? 'Testing…' : 'Re-test all'}
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            >
+              <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto px-6 py-4">
+          {isLoading && (
+            <div className="flex items-center justify-center py-16 text-gray-500 dark:text-gray-400 gap-2 text-sm">
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              </svg>
+              Testing indexers…
+            </div>
+          )}
+          {isError && (
+            <p className="text-sm text-red-600 dark:text-red-400 py-8 text-center">
+              Could not fetch indexers. Check that the Jackett instance is reachable.
+            </p>
+          )}
+          {stats && stats.indexers.length === 0 && (
+            <p className="text-sm text-gray-400 dark:text-gray-500 py-8 text-center">No indexers found.</p>
+          )}
+          {stats && stats.indexers.length > 0 && (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-gray-700">
+                  <th className="pb-2 pr-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400">Status</th>
+                  <th className="pb-2 pr-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400">Indexer</th>
+                  <th className="pb-2 pr-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400">Configured</th>
+                  <th className="pb-2 text-right text-xs font-semibold text-gray-500 dark:text-gray-400">Monitor</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                {stats.indexers.map((idx) => (
+                  <tr key={idx.id} className={idx.monitored ? '' : 'opacity-40'}>
+                    <td className="py-2 pr-3">
+                      <div title={idx.test_error ?? idx.test_status}>
+                        <IndexerStatusIcon status={idx.test_status} />
+                      </div>
+                    </td>
+                    <td className="py-2 pr-3">
+                      <p className="font-medium text-gray-900 dark:text-gray-100">{idx.name || idx.id}</p>
+                      {idx.test_status === 'error' && idx.test_error && (
+                        <p className="text-xs text-red-500 mt-0.5 truncate max-w-xs">{idx.test_error}</p>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {idx.configured
+                        ? <span className="text-xs text-green-600 dark:text-green-400">Yes</span>
+                        : <span className="text-xs text-gray-400">No</span>}
+                    </td>
+                    <td className="py-2 text-right">
+                      <button
+                        onClick={() => toggleMut.mutate({ indexerId: idx.id, monitored: !idx.monitored })}
+                        disabled={toggleMut.isPending}
+                        className={`rounded px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                          idx.monitored
+                            ? 'text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30'
+                            : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+                        }`}
+                      >
+                        {idx.monitored ? 'Disable' : 'Enable'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Apps page ──────────────────────────────────────────────────────────────
 
 export function Apps() {
@@ -183,6 +317,9 @@ export function Apps() {
 
   // Per-row test-connection results
   const [testResult, setTestResult] = useState<Record<string, { ok: boolean; msg: string }>>({})
+
+  // Jackett indexer modal
+  const [jackettTarget, setJackettTarget] = useState<Instance | null>(null)
 
   // ── helpers ──
   function invalidate() {
@@ -394,6 +531,17 @@ export function Apps() {
                             {isTesting ? 'Testing…' : 'Test'}
                           </button>
 
+                          {/* Jackett indexers */}
+                          {inst.kind === 'jackett' && (
+                            <button
+                              onClick={() => setJackettTarget(inst)}
+                              disabled={isDeleting}
+                              className="rounded px-2 py-1 text-xs font-medium text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/30 disabled:opacity-50 transition-colors"
+                            >
+                              Indexers
+                            </button>
+                          )}
+
                           {/* Toggle enabled */}
                           <button
                             onClick={() => enableMut.mutate({ id: inst.id, enabled: !inst.enabled })}
@@ -472,6 +620,14 @@ export function Apps() {
             </p>
           )}
         </Modal>
+      )}
+
+      {/* ── Jackett indexers modal ── */}
+      {jackettTarget && (
+        <JackettIndexersModal
+          instance={jackettTarget}
+          onClose={() => setJackettTarget(null)}
+        />
       )}
     </div>
   )
