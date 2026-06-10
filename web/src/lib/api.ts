@@ -36,9 +36,9 @@ export const api = {
   instances: {
     list: () => get<Instance[]>('/instances'),
     get: (id: string) => get<Instance>(`/instances/${id}`),
-    create: (body: { kind: string; name: string; base_url: string; api_key?: string }) =>
+    create: (body: { kind: string; name: string; base_url: string; api_key?: string; username?: string; password?: string }) =>
       post<Instance>('/instances', body),
-    update: (id: string, body: { name: string; base_url: string; api_key?: string }) =>
+    update: (id: string, body: { name: string; base_url: string; api_key?: string; username?: string; password?: string }) =>
       put<Instance>(`/instances/${id}`, body),
     delete: (id: string) => del(`/instances/${id}`),
     test: (id: string) => post<{ ok: boolean; error?: string }>(`/instances/${id}/test`),
