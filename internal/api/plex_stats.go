@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/go-chi/chi/v5"
@@ -141,7 +142,11 @@ func fetchPlexStats(ctx context.Context, inst providers.Instance) (*plexStatsRes
 				Size      int `json:"size"`
 			} `json:"MediaContainer"`
 		}
-		if err := doGet(path+"?X-Plex-Container-Start=0&X-Plex-Container-Size=0", &v); err != nil {
+		sep := "?"
+		if strings.Contains(path, "?") {
+			sep = "&"
+		}
+		if err := doGet(path+sep+"X-Plex-Container-Start=0&X-Plex-Container-Size=0", &v); err != nil {
 			return 0
 		}
 		if v.MediaContainer.TotalSize > 0 {
