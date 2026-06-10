@@ -114,6 +114,10 @@ func (s *Server) Start(ctx context.Context, listen string) error {
 		r.Post("/jobs/{id}/apply", syn.Apply)
 	})
 
+	// Plex stats
+	plexStats := &api.PlexStatsHandler{Deps: s.deps}
+	r.Get("/api/v1/instances/{id}/plex/stats", plexStats.Stats)
+
 	r.Handle("/*", spaHandler())
 
 	srv := &http.Server{
