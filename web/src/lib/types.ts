@@ -99,6 +99,19 @@ export interface SyncPreview {
   count: number
 }
 
+export interface DelugeStats {
+  download_rate: number
+  upload_rate: number
+  num_connections: number
+  torrents: {
+    total: number
+    downloading: number
+    seeding: number
+    paused: number
+    error: number
+  }
+}
+
 export interface PlexLibrary {
   key: string
   title: string

@@ -118,6 +118,10 @@ func (s *Server) Start(ctx context.Context, listen string) error {
 	plexStats := &api.PlexStatsHandler{Deps: s.deps}
 	r.Get("/api/v1/instances/{id}/plex/stats", plexStats.Stats)
 
+	// Deluge stats
+	delugeStats := &api.DelugeStatsHandler{Deps: s.deps}
+	r.Get("/api/v1/instances/{id}/deluge/stats", delugeStats.Stats)
+
 	r.Handle("/*", spaHandler())
 
 	srv := &http.Server{

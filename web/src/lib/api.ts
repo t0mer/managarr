@@ -3,7 +3,7 @@ import type {
   HealthResponse, VersionResponse,
   Instance, LogEntry, Issue, IssueStatus,
   MetricSeries, NotifyChannel, BackupTarget, Backup,
-  SyncJob, SyncPreview, PlexStats
+  SyncJob, SyncPreview, PlexStats, DelugeStats
 } from './types'
 
 const BASE = '/api/v1'
@@ -119,5 +119,9 @@ export const api = {
 
   plex: {
     stats: (id: string) => get<PlexStats>(`/instances/${id}/plex/stats`),
+  },
+
+  deluge: {
+    stats: (id: string) => get<DelugeStats>(`/instances/${id}/deluge/stats`),
   },
 }

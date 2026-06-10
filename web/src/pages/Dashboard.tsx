@@ -4,9 +4,9 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip,
   ResponsiveContainer, Legend,
 } from 'recharts'
-import { Film, Tv, Activity } from 'lucide-react'
+import { Film, Tv, Activity, Download, Upload, ArrowDownUp } from 'lucide-react'
 import { api } from '../lib/api'
-import type { Instance, Issue, MetricSeries, PlexStats } from '../lib/types'
+import type { Instance, Issue, MetricSeries, PlexStats, DelugeStats } from '../lib/types'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -321,6 +321,103 @@ function PlexInstanceCard({ instance }: { instance: Instance }) {
   return <PlexLibraryGrid stats={stats} />
 }
 
+// ── Deluge ───────────────────────────────────────────────────────────────────
+
+function fmtRate(bytesPerSec: number): string {
+  if (bytesPerSec >= 1_048_576) return `${(bytesPerSec / 1_048_576).toFixed(1)} MB/s`
+  if (bytesPerSec >= 1_024) return `${(bytesPerSec / 1_024).toFixed(1)} KB/s`
+  return `${Math.round(bytesPerSec)} B/s`
+}
+
+function DelugePanel({ stats, name }: { stats: DelugeStats; name: string }) {
+  const { torrents } = stats
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] p-6 space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold">{name}</h2>
+          <p className="text-xs opacity-50 mt-0.5">Deluge torrent client</p>
+        </div>
+        <div className="flex items-center gap-1.5 text-xs opacity-60">
+          <ArrowDownUp size={13} />
+          <span>{stats.num_connections} connections</span>
+        </div>
+      </div>
+
+      {/* Transfer rates */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-lg bg-[var(--bg)] border border-[var(--border)] p-3 flex items-center gap-3">
+          <div className="p-2 rounded-md bg-green-500/10 text-green-500">
+            <Download size={16} />
+          </div>
+          <div>
+            <p className="text-xs opacity-50">Download</p>
+            <p className="text-lg font-bold">{fmtRate(stats.download_rate)}</p>
+          </div>
+        </div>
+        <div className="rounded-lg bg-[var(--bg)] border border-[var(--border)] p-3 flex items-center gap-3">
+          <div className="p-2 rounded-md bg-blue-500/10 text-blue-500">
+            <Upload size={16} />
+          </div>
+          <div>
+            <p className="text-xs opacity-50">Upload</p>
+            <p className="text-lg font-bold">{fmtRate(stats.upload_rate)}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Torrent counts */}
+      <div>
+        <p className="text-xs font-semibold opacity-50 uppercase tracking-wider mb-2">Torrents</p>
+        <div className="grid grid-cols-5 gap-2 text-center">
+          {[
+            { label: 'Total', value: torrents.total, colour: 'text-[var(--fg)]' },
+            { label: 'Downloading', value: torrents.downloading, colour: 'text-green-500' },
+            { label: 'Seeding', value: torrents.seeding, colour: 'text-blue-500' },
+            { label: 'Paused', value: torrents.paused, colour: 'text-yellow-500' },
+            { label: 'Error', value: torrents.error, colour: 'text-red-500' },
+          ].map(({ label, value, colour }) => (
+            <div key={label} className="rounded-lg bg-[var(--bg)] border border-[var(--border)] py-2 px-1">
+              <p className={`text-xl font-bold ${colour}`}>{value}</p>
+              <p className="text-xs opacity-50 mt-0.5">{label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DelugeInstanceCard({ instance }: { instance: Instance }) {
+  const { data: stats, isLoading, isError } = useQuery<DelugeStats>({
+    queryKey: ['deluge-stats', instance.id],
+    queryFn: () => api.deluge.stats(instance.id),
+    refetchInterval: 30_000,
+    retry: 1,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] p-6 animate-pulse">
+        <div className="h-4 w-32 bg-[var(--border)] rounded mb-4" />
+        <div className="h-24 bg-[var(--border)] rounded" />
+      </div>
+    )
+  }
+
+  if (isError || !stats) {
+    return (
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] p-6">
+        <p className="text-sm opacity-50">
+          Could not load Deluge stats for <span className="font-medium">{instance.name}</span>
+        </p>
+      </div>
+    )
+  }
+
+  return <DelugePanel stats={stats} name={instance.name} />
+}
+
 // ── main page ─────────────────────────────────────────────────────────────────
 
 export function Dashboard() {
@@ -331,6 +428,7 @@ export function Dashboard() {
   })
 
   const plexInstances = instances.filter((i) => i.kind === 'plex' && i.enabled)
+  const delugeInstances = instances.filter((i) => i.kind === 'deluge' && i.enabled)
 
   const { data: openIssues = [] } = useQuery<Issue[]>({
     queryKey: ['issues', 'open'],
@@ -401,6 +499,16 @@ export function Dashboard() {
         <h2 className="text-base font-semibold mb-4">Registered Instances</h2>
         <InstanceTable instances={instances} />
       </div>
+
+      {/* Deluge stats */}
+      {delugeInstances.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-base font-semibold">Deluge</h2>
+          {delugeInstances.map((inst) => (
+            <DelugeInstanceCard key={inst.id} instance={inst} />
+          ))}
+        </div>
+      )}
 
       {/* Plex library stats */}
       {plexInstances.length > 0 && (
