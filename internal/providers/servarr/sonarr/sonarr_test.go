@@ -63,6 +63,23 @@ func newMockSonarr(t *testing.T) (*httptest.Server, providers.Instance) {
 		json.NewEncoder(w).Encode(map[string]string{"standardEpisodeFormat": "{Series} S{Season}E{Episode}"})
 	})
 
+	mux.HandleFunc("/api/v3/command", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"id": 1, "status": "queued"})
+	})
+
+	mux.HandleFunc("/api/v3/command/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"id": 1, "status": "completed"})
+	})
+
+	mux.HandleFunc("/api/v3/system/backup", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]map[string]any{
+			{"id": 1, "name": "sonarr_backup_test.zip", "path": "/backup/manual/sonarr_backup_test.zip", "time": time.Now().UTC().Format(time.RFC3339), "size": 1024},
+		})
+	})
+
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
