@@ -122,6 +122,11 @@ func (s *Server) Start(ctx context.Context, listen string) error {
 	delugeStats := &api.DelugeStatsHandler{Deps: s.deps}
 	r.Get("/api/v1/instances/{id}/deluge/stats", delugeStats.Stats)
 
+	// Jackett stats + per-indexer monitoring toggle
+	jackettStats := &api.JackettStatsHandler{Deps: s.deps}
+	r.Get("/api/v1/instances/{id}/jackett/stats", jackettStats.Stats)
+	r.Patch("/api/v1/instances/{id}/jackett/indexers/{indexer_id}", jackettStats.SetMonitored)
+
 	r.Handle("/*", spaHandler())
 
 	srv := &http.Server{
