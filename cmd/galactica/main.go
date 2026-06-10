@@ -52,6 +52,7 @@ func main() {
 	}
 
 	log := newLogger(cfg.Log.Level, cfg.Log.Format)
+	slog.SetDefault(log)
 
 	svcCfg := &service.Config{
 		Name:        version.BinaryName,

@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -215,13 +216,12 @@ func (h *BackupHandler) RunBackup(w http.ResponseWriter, r *http.Request) {
 		Status:     "pending",
 	})
 
-	// Copy context values we need inside the goroutine before r is reclaimed.
-	ctx := r.Context()
-
-	// Run asynchronously.
+	// Run asynchronously. Use context.Background() — r.Context() is cancelled
+	// the moment the handler returns its 202, which would kill the download.
 	go func() {
-		blob, err := cb.ExportConfig(ctx, inst)
+		blob, err := cb.ExportConfig(context.Background(), inst)
 		if err != nil {
+			h.Log.Error("backup failed", "backup_id", backupID, "instance", inst.Name, "error", err)
 			_ = storage.UpdateBackupStatus(h.DB, backupID, "error", "", err.Error(), 0)
 			return
 		}
