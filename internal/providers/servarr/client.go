@@ -22,9 +22,15 @@ var cli = &http.Client{Timeout: 15 * time.Second}
 // backupCli uses a longer timeout for downloading (potentially large) backup archives.
 var backupCli = &http.Client{Timeout: 2 * time.Minute}
 
+// baseURL strips any trailing slash from b so that paths with a leading slash
+// can be concatenated without producing a double-slash URL.
+func baseURL(b string) string {
+	return strings.TrimRight(b, "/")
+}
+
 // GetJSON performs an authenticated GET to the servarr API and decodes the JSON response.
 func GetJSON(ctx context.Context, inst providers.Instance, path string, v any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, inst.BaseURL+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL(inst.BaseURL)+path, nil)
 	if err != nil {
 		return fmt.Errorf("building request: %w", err)
 	}
@@ -68,7 +74,7 @@ func formsLogin(ctx context.Context, inst providers.Instance) (*http.Client, err
 			return http.ErrUseLastResponse
 		},
 	}
-	loginURL := inst.BaseURL + "/login"
+	loginURL := baseURL(inst.BaseURL) + "/login"
 	formData := url.Values{
 		"username":   {inst.Username},
 		"password":   {inst.Password},
@@ -125,7 +131,7 @@ func formsAuthDownload(ctx context.Context, inst providers.Instance, path string
 
 	var lastErr error
 	for _, p := range candidates {
-		dlURL := inst.BaseURL + p
+		dlURL := baseURL(inst.BaseURL) + p
 		dlReq, err := http.NewRequestWithContext(ctx, http.MethodGet, dlURL, nil)
 		if err != nil {
 			lastErr = fmt.Errorf("building download request for %s: %w", p, err)
@@ -189,7 +195,7 @@ func tryBackupDownload(ctx context.Context, inst providers.Instance, path string
 				if inst.Username == "" {
 					return nil, fmt.Errorf("no credentials")
 				}
-				req, err := http.NewRequestWithContext(ctx, http.MethodGet, inst.BaseURL+path, nil)
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL(inst.BaseURL)+path, nil)
 				if err != nil {
 					return nil, err
 				}
@@ -218,7 +224,7 @@ func tryBackupDownload(ctx context.Context, inst providers.Instance, path string
 		{
 			label: "no-auth",
 			run: func() ([]byte, error) {
-				req, err := http.NewRequestWithContext(ctx, http.MethodGet, inst.BaseURL+path, nil)
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL(inst.BaseURL)+path, nil)
 				if err != nil {
 					return nil, err
 				}
@@ -248,7 +254,7 @@ func tryBackupDownload(ctx context.Context, inst providers.Instance, path string
 			// logs but is the only option for Forms Auth without valid credentials.
 			label: "apiKey query param",
 			run: func() ([]byte, error) {
-				u := inst.BaseURL + path + "?apiKey=" + url.QueryEscape(inst.APIKey)
+				u := baseURL(inst.BaseURL) + path + "?apiKey=" + url.QueryEscape(inst.APIKey)
 				req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 				if err != nil {
 					return nil, err
@@ -337,7 +343,7 @@ func formsAuthAPIDownload(ctx context.Context, inst providers.Instance, apiBase 
 
 	var lastErr error
 	for _, path := range apiCandidates {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, inst.BaseURL+path, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL(inst.BaseURL)+path, nil)
 		if err != nil {
 			lastErr = fmt.Errorf("%s: build request: %w", path, err)
 			continue
@@ -377,7 +383,7 @@ func formsAuthAPIDownload(ctx context.Context, inst providers.Instance, apiBase 
 	}
 
 	for _, path := range webCandidates {
-		dlURL := inst.BaseURL + path
+		dlURL := baseURL(inst.BaseURL) + path
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, dlURL, nil)
 		if err != nil {
 			lastErr = fmt.Errorf("%s: build request: %w", path, err)
@@ -445,7 +451,7 @@ func downloadViaAPI(ctx context.Context, inst providers.Instance, apiBase string
 	}
 	var lastErr error
 	for _, path := range candidates {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, inst.BaseURL+path, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL(inst.BaseURL)+path, nil)
 		if err != nil {
 			lastErr = fmt.Errorf("%s: build request: %w", path, err)
 			continue
@@ -502,7 +508,7 @@ func triggerBackupCommand(ctx context.Context, inst providers.Instance, apiBase 
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, inst.BaseURL+apiBase+"/command", bytes.NewReader(b))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL(inst.BaseURL)+apiBase+"/command", bytes.NewReader(b))
 	if err != nil {
 		return fmt.Errorf("building backup command request: %w", err)
 	}
@@ -686,7 +692,7 @@ func PutJSON(ctx context.Context, inst providers.Instance, path string, body, v 
 	if err != nil {
 		return fmt.Errorf("marshalling body: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, inst.BaseURL+path, bytes.NewReader(b))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, baseURL(inst.BaseURL)+path, bytes.NewReader(b))
 	if err != nil {
 		return fmt.Errorf("building request: %w", err)
 	}
