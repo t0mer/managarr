@@ -160,14 +160,20 @@ func fetchJackettStats(ctx context.Context, db *sql.DB, inst providers.Instance)
 		return nil, fmt.Errorf("fetching indexers: %w", err)
 	}
 
-	// Test each configured + monitored indexer in parallel.
-	results := make([]jackettIndexerResp, len(xmlIndexers))
+	// Keep only configured indexers.
+	var configured []xmlJackettIndexer
+	for _, xi := range xmlIndexers {
+		if xi.Configured == "true" {
+			configured = append(configured, xi)
+		}
+	}
+
+	// Test each monitored indexer in parallel.
+	results := make([]jackettIndexerResp, len(configured))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
-	for i, xi := range xmlIndexers {
-		configured := xi.Configured == "true"
-
+	for i, xi := range configured {
 		// Monitored defaults to true unless explicitly set to false in DB.
 		mon := true
 		if v, ok := monitored[xi.ID]; ok {
@@ -177,12 +183,12 @@ func fetchJackettStats(ctx context.Context, db *sql.DB, inst providers.Instance)
 		results[i] = jackettIndexerResp{
 			ID:         xi.ID,
 			Name:       xi.Title,
-			Configured: configured,
+			Configured: true,
 			Monitored:  mon,
 			TestStatus: "skipped",
 		}
 
-		if !configured || !mon {
+		if !mon {
 			continue
 		}
 
@@ -202,11 +208,8 @@ func fetchJackettStats(ctx context.Context, db *sql.DB, inst providers.Instance)
 	}
 	wg.Wait()
 
-	resp := &jackettStatsResp{Indexers: results, Total: len(results)}
+	resp := &jackettStatsResp{Indexers: results, Total: len(results), Configured: len(results)}
 	for _, r := range results {
-		if r.Configured {
-			resp.Configured++
-		}
 		switch r.TestStatus {
 		case "ok":
 			resp.OK++
