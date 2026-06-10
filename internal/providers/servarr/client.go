@@ -66,19 +66,18 @@ func DownloadLatestBackup(ctx context.Context, inst providers.Instance, apiBase 
 		}
 	}
 
-	// The /backup/ path is served by the *arr web layer, not the API layer.
-	// It accepts Basic Auth (username:password) or an apiKey query parameter.
-	// Prefer Basic Auth when credentials are provided; fall back to apiKey param.
-	downloadURL := inst.BaseURL + latest.Path
-	if inst.Username == "" {
-		downloadURL += "?apiKey=" + inst.APIKey
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	// The /backup/ path is served by the *arr web layer.
+	// Use Basic Auth when credentials are configured (preferred); otherwise fall
+	// back to the X-Api-Key header.  Never put secrets in the URL — query
+	// parameters appear in server access logs and proxy logs.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, inst.BaseURL+latest.Path, nil)
 	if err != nil {
 		return providers.ConfigBlob{}, fmt.Errorf("building download request: %w", err)
 	}
 	if inst.Username != "" {
 		req.SetBasicAuth(inst.Username, inst.Password)
+	} else {
+		req.Header.Set("X-Api-Key", inst.APIKey)
 	}
 
 	resp, err := backupCli.Do(req)
