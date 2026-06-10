@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -13,6 +14,9 @@ import (
 )
 
 var cli = &http.Client{Timeout: 15 * time.Second}
+
+// backupCli uses a longer timeout for downloading (potentially large) backup archives.
+var backupCli = &http.Client{Timeout: 2 * time.Minute}
 
 // GetJSON performs an authenticated GET to the servarr API and decodes the JSON response.
 func GetJSON(ctx context.Context, inst providers.Instance, path string, v any) error {
@@ -31,6 +35,66 @@ func GetJSON(ctx context.Context, inst providers.Instance, path string, v any) e
 		return fmt.Errorf("GET %s: HTTP %d", path, resp.StatusCode)
 	}
 	return json.NewDecoder(resp.Body).Decode(v)
+}
+
+// backupEntry is a single record from the *arr system/backup list endpoint.
+type backupEntry struct {
+	Name string    `json:"name"`
+	Path string    `json:"path"`
+	Time time.Time `json:"time"`
+	Size int64     `json:"size"`
+}
+
+// DownloadLatestBackup lists the instance's existing backup archives via
+// {apiBase}/system/backup, picks the most recent by time, downloads it, and
+// returns it as a ConfigBlob. apiBase is "/api/v3" for Sonarr/Radarr, "/api/v1"
+// for Lidarr.
+func DownloadLatestBackup(ctx context.Context, inst providers.Instance, apiBase string) (providers.ConfigBlob, error) {
+	var backups []backupEntry
+	if err := GetJSON(ctx, inst, apiBase+"/system/backup", &backups); err != nil {
+		return providers.ConfigBlob{}, fmt.Errorf("listing backups: %w", err)
+	}
+	if len(backups) == 0 {
+		return providers.ConfigBlob{}, fmt.Errorf("no backups available — trigger one inside %s first", inst.Name)
+	}
+
+	latest := backups[0]
+	for _, b := range backups[1:] {
+		if b.Time.After(latest.Time) {
+			latest = b
+		}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, inst.BaseURL+latest.Path, nil)
+	if err != nil {
+		return providers.ConfigBlob{}, fmt.Errorf("building download request: %w", err)
+	}
+	req.Header.Set("X-Api-Key", inst.APIKey)
+
+	resp, err := backupCli.Do(req)
+	if err != nil {
+		return providers.ConfigBlob{}, fmt.Errorf("downloading backup: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return providers.ConfigBlob{}, fmt.Errorf("download %s: HTTP %d", latest.Path, resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return providers.ConfigBlob{}, fmt.Errorf("reading backup data: %w", err)
+	}
+
+	// Validate size if the listing reported one.
+	if latest.Size > 0 && int64(len(data)) != latest.Size {
+		return providers.ConfigBlob{}, fmt.Errorf("backup size mismatch: downloaded %d bytes, expected %d", len(data), latest.Size)
+	}
+
+	return providers.ConfigBlob{
+		ContentType: "application/zip",
+		Filename:    latest.Name,
+		Data:        data,
+	}, nil
 }
 
 // PutJSON performs an authenticated PUT with a JSON body.

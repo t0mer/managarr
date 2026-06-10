@@ -51,6 +51,7 @@ type Sample struct {
 // ConfigBlob is an opaque config export from a provider.
 type ConfigBlob struct {
 	ContentType string
+	Filename    string // original filename, e.g. "sonarr_backup_2024_01_01.zip"
 	Data        []byte
 }
 
