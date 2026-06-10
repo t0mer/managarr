@@ -291,13 +291,26 @@ function PlexLibraryGrid({ stats }: { stats: PlexStats }) {
   )
 }
 
+function DisabledCard({ name, kind }: { name: string; kind: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--sidebar-bg)] p-5 flex items-center gap-3 opacity-50">
+      <KindBadge kind={kind} />
+      <span className="text-sm font-medium">{name}</span>
+      <span className="text-xs ml-auto">disabled</span>
+    </div>
+  )
+}
+
 function PlexInstanceCard({ instance }: { instance: Instance }) {
   const { data: stats, isLoading, isError } = useQuery<PlexStats>({
     queryKey: ['plex-stats', instance.id],
     queryFn: () => api.plex.stats(instance.id),
     refetchInterval: 60_000,
     retry: 1,
+    enabled: instance.enabled,
   })
+
+  if (!instance.enabled) return <DisabledCard name={instance.name} kind={instance.kind} />
 
   if (isLoading) {
     return (
@@ -394,7 +407,10 @@ function DelugeInstanceCard({ instance }: { instance: Instance }) {
     queryFn: () => api.deluge.stats(instance.id),
     refetchInterval: 30_000,
     retry: 1,
+    enabled: instance.enabled,
   })
+
+  if (!instance.enabled) return <DisabledCard name={instance.name} kind={instance.kind} />
 
   if (isLoading) {
     return (
@@ -427,8 +443,8 @@ export function Dashboard() {
     refetchInterval: 60_000,
   })
 
-  const plexInstances = instances.filter((i) => i.kind === 'plex' && i.enabled)
-  const delugeInstances = instances.filter((i) => i.kind === 'deluge' && i.enabled)
+  const plexInstances = instances.filter((i) => i.kind === 'plex')
+  const delugeInstances = instances.filter((i) => i.kind === 'deluge')
 
   const { data: openIssues = [] } = useQuery<Issue[]>({
     queryKey: ['issues', 'open'],
