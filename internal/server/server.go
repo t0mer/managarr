@@ -127,6 +127,11 @@ func (s *Server) Start(ctx context.Context, listen string) error {
 	r.Get("/api/v1/instances/{id}/jackett/stats", jackettStats.Stats)
 	r.Patch("/api/v1/instances/{id}/jackett/indexers/{indexer_id}", jackettStats.SetMonitored)
 
+	// Sonarr / Radarr stats
+	servarrStats := &api.ServarrStatsHandler{Deps: s.deps}
+	r.Get("/api/v1/instances/{id}/sonarr/stats", servarrStats.SonarrStats)
+	r.Get("/api/v1/instances/{id}/radarr/stats", servarrStats.RadarrStats)
+
 	r.Handle("/*", spaHandler())
 
 	srv := &http.Server{
