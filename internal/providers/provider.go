@@ -20,6 +20,7 @@ const (
 	KindPlex     Kind = "plex"
 	KindEmby     Kind = "emby"
 	KindJellyfin Kind = "jellyfin"
+	KindBazarr   Kind = "bazarr"
 )
 
 // Instance represents one running installation of a managed app.

@@ -1,6 +1,6 @@
 // web/src/lib/types.ts
 
-export type ProviderKind = 'sonarr' | 'radarr' | 'lidarr' | 'jackett' | 'deluge' | 'plex' | 'emby' | 'jellyfin'
+export type ProviderKind = 'sonarr' | 'radarr' | 'lidarr' | 'jackett' | 'deluge' | 'plex' | 'emby' | 'jellyfin' | 'bazarr'
 export type IssueStatus = 'open' | 'acknowledged' | 'resolved'
 export type LogLevel = 'debug' | 'info' | 'warn' | 'warning' | 'error' | 'fatal'
 export type NotifyProvider = 'shoutrrr' | 'greenapi' | 'whatsapp_web'

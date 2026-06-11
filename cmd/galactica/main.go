@@ -17,6 +17,7 @@ import (
 	"github.com/t0mer/galactica/internal/version"
 
 	// Blank imports register all providers via their init() functions.
+	_ "github.com/t0mer/galactica/internal/providers/bazarr"
 	_ "github.com/t0mer/galactica/internal/providers/deluge"
 	_ "github.com/t0mer/galactica/internal/providers/emby"
 	_ "github.com/t0mer/galactica/internal/providers/jackett"
