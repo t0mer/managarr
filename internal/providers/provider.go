@@ -20,16 +20,19 @@ const (
 	KindPlex     Kind = "plex"
 	KindEmby     Kind = "emby"
 	KindJellyfin Kind = "jellyfin"
+	KindBazarr   Kind = "bazarr"
 )
 
 // Instance represents one running installation of a managed app.
 // Secrets are resolved from storage at call time and never serialised in API responses.
 type Instance struct {
-	ID      string
-	Kind    Kind
-	Name    string
-	BaseURL string
-	APIKey  string // resolved from secrets table, never in API responses
+	ID       string
+	Kind     Kind
+	Name     string
+	BaseURL  string
+	APIKey   string // resolved from secrets table, never in API responses
+	Username string // optional Basic-Auth username (used for *arr web-layer routes)
+	Password string // optional Basic-Auth password
 }
 
 // LogEntry is a normalised log line from any provider.
@@ -51,6 +54,7 @@ type Sample struct {
 // ConfigBlob is an opaque config export from a provider.
 type ConfigBlob struct {
 	ContentType string
+	Filename    string // original filename, e.g. "sonarr_backup_2024_01_01.zip"
 	Data        []byte
 }
 

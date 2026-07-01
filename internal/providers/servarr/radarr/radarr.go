@@ -86,20 +86,13 @@ func (p *radarrProvider) Collect(ctx context.Context, inst providers.Instance) (
 	}, nil
 }
 
-// ExportConfig exports quality profiles and naming config.
+// ExportConfig downloads the most recent backup archive Radarr has on disk.
 func (p *radarrProvider) ExportConfig(ctx context.Context, inst providers.Instance) (providers.ConfigBlob, error) {
-	var profiles, naming any
-	if err := servarr.GetJSON(ctx, inst, "/api/v3/qualityProfile", &profiles); err != nil {
-		return providers.ConfigBlob{}, fmt.Errorf("radarr export qualityProfile: %w", err)
-	}
-	if err := servarr.GetJSON(ctx, inst, "/api/v3/config/naming", &naming); err != nil {
-		return providers.ConfigBlob{}, fmt.Errorf("radarr export naming: %w", err)
-	}
-	b, err := json.Marshal(map[string]any{"qualityProfiles": profiles, "naming": naming})
+	blob, err := servarr.DownloadLatestBackup(ctx, inst, "/api/v3")
 	if err != nil {
-		return providers.ConfigBlob{}, err
+		return providers.ConfigBlob{}, fmt.Errorf("radarr backup: %w", err)
 	}
-	return providers.ConfigBlob{ContentType: "application/json", Data: b}, nil
+	return blob, nil
 }
 
 // ImportConfig restores config from a blob. Full apply deferred to v2.

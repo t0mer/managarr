@@ -75,17 +75,13 @@ func (p *lidarrProvider) Collect(ctx context.Context, inst providers.Instance) (
 	}, nil
 }
 
-// ExportConfig exports quality profiles.
+// ExportConfig downloads the most recent backup archive Lidarr has on disk.
 func (p *lidarrProvider) ExportConfig(ctx context.Context, inst providers.Instance) (providers.ConfigBlob, error) {
-	var profiles any
-	if err := servarr.GetJSON(ctx, inst, "/api/v1/qualityProfile", &profiles); err != nil {
-		return providers.ConfigBlob{}, fmt.Errorf("lidarr export qualityProfile: %w", err)
-	}
-	b, err := json.Marshal(map[string]any{"qualityProfiles": profiles})
+	blob, err := servarr.DownloadLatestBackup(ctx, inst, "/api/v1")
 	if err != nil {
-		return providers.ConfigBlob{}, err
+		return providers.ConfigBlob{}, fmt.Errorf("lidarr backup: %w", err)
 	}
-	return providers.ConfigBlob{ContentType: "application/json", Data: b}, nil
+	return blob, nil
 }
 
 // ImportConfig restores config from a blob. Full apply deferred to v2.

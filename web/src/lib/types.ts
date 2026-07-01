@@ -1,8 +1,6 @@
 // web/src/lib/types.ts
 
-export type ProviderKind = 'sonarr' | 'radarr' | 'lidarr' | 'jackett' | 'deluge' | 'plex' | 'emby' | 'jellyfin'
-export type IssueStatus = 'open' | 'acknowledged' | 'resolved'
-export type LogLevel = 'debug' | 'info' | 'warn' | 'warning' | 'error' | 'fatal'
+export type ProviderKind = 'sonarr' | 'radarr' | 'lidarr' | 'jackett' | 'deluge' | 'plex' | 'emby' | 'jellyfin' | 'bazarr'
 export type NotifyProvider = 'shoutrrr' | 'greenapi' | 'whatsapp_web'
 
 export interface Instance {
@@ -12,29 +10,6 @@ export interface Instance {
   base_url: string
   enabled: boolean
   created_at: string
-}
-
-export interface LogEntry {
-  id: number
-  instance_id: string
-  ts: string
-  level: LogLevel
-  message: string
-  source: string
-  raw?: string
-}
-
-export interface Issue {
-  id: string
-  fingerprint: string
-  instance_id: string
-  level: LogLevel
-  message: string
-  status: IssueStatus
-  first_seen: string
-  last_seen: string
-  count: number
-  impact_score: number
 }
 
 export interface MetricPoint {

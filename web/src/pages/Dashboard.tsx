@@ -6,7 +6,7 @@ import {
 } from 'recharts'
 import { Film, Tv, Activity, Download, Upload, ArrowDownUp, CheckCircle2, XCircle, MinusCircle } from 'lucide-react'
 import { api } from '../lib/api'
-import type { Instance, Issue, MetricSeries, PlexStats, DelugeStats, JackettStats, JackettIndexer, SonarrStats, RadarrStats, LidarrStats } from '../lib/types'
+import type { Instance, MetricSeries, PlexStats, DelugeStats, JackettStats, JackettIndexer, SonarrStats, RadarrStats, LidarrStats } from '../lib/types'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -745,12 +745,6 @@ export function Dashboard() {
   const delugeInstances = instances.filter((i) => i.kind === 'deluge')
   const plexInstances = instances.filter((i) => i.kind === 'plex')
 
-  const { data: openIssues = [] } = useQuery<Issue[]>({
-    queryKey: ['issues', 'open'],
-    queryFn: () => api.issues.list('open'),
-    refetchInterval: 60_000,
-  })
-
   const { data: health } = useQuery({
     queryKey: ['health'],
     queryFn: () => api.health(),
@@ -765,7 +759,6 @@ export function Dashboard() {
 
   const totalInstances = instances.length
   const enabledInstances = instances.filter((i) => i.enabled).length
-  const openIssueCount = openIssues.length
 
   const dbStatus = health?.db ?? '—'
   const dbOk = dbStatus === 'ok'
@@ -778,18 +771,13 @@ export function Dashboard() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         <StatCard label="Total Instances" value={totalInstances} />
         <StatCard
           label="Enabled Instances"
           value={enabledInstances}
           sub={`of ${totalInstances}`}
           accent={enabledInstances > 0 ? 'text-green-500' : undefined}
-        />
-        <StatCard
-          label="Open Issues"
-          value={openIssueCount}
-          accent={openIssueCount > 0 ? 'text-red-500' : 'text-green-500'}
         />
         <StatCard
           label="DB Status"

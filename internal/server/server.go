@@ -66,11 +66,6 @@ func (s *Server) Start(ctx context.Context, listen string) error {
 		r.Patch("/{id}/enabled", inst.SetEnabled)
 	})
 
-	// Logs
-	logs := &api.LogsHandler{Deps: s.deps}
-	r.Get("/api/v1/logs", logs.List)
-	r.Get("/api/v1/logs/stream", logs.Stream)
-
 	// Metrics
 	met := &api.MetricsHandler{Deps: s.deps}
 	r.Get("/api/v1/metrics", met.Metrics)
@@ -84,14 +79,6 @@ func (s *Server) Start(ctx context.Context, listen string) error {
 		r.Put("/{id}", ntfy.Update)
 		r.Delete("/{id}", ntfy.Delete)
 		r.Post("/test", ntfy.TestSend)
-	})
-
-	// Issues
-	iss := &api.IssuesHandler{Deps: s.deps}
-	r.Route("/api/v1/issues", func(r chi.Router) {
-		r.Get("/", iss.List)
-		r.Get("/{id}", iss.Get)
-		r.Patch("/{id}/status", iss.UpdateStatus)
 	})
 
 	// Backup

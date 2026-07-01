@@ -17,6 +17,7 @@ import (
 	"github.com/t0mer/galactica/internal/version"
 
 	// Blank imports register all providers via their init() functions.
+	_ "github.com/t0mer/galactica/internal/providers/bazarr"
 	_ "github.com/t0mer/galactica/internal/providers/deluge"
 	_ "github.com/t0mer/galactica/internal/providers/emby"
 	_ "github.com/t0mer/galactica/internal/providers/jackett"
@@ -52,6 +53,7 @@ func main() {
 	}
 
 	log := newLogger(cfg.Log.Level, cfg.Log.Format)
+	slog.SetDefault(log)
 
 	svcCfg := &service.Config{
 		Name:        version.BinaryName,

@@ -19,15 +19,19 @@ const KINDS: ProviderKind[] = [
   'sonarr', 'radarr', 'lidarr', 'jackett', 'deluge', 'plex', 'emby', 'jellyfin',
 ]
 
+const ARR_KINDS: ProviderKind[] = ['sonarr', 'radarr', 'lidarr']
+
 interface FormState {
   kind: ProviderKind
   name: string
   base_url: string
   api_key: string
+  username: string
+  password: string
 }
 
 function defaultForm(): FormState {
-  return { kind: 'sonarr', name: '', base_url: '', api_key: '' }
+  return { kind: 'sonarr', name: '', base_url: '', api_key: '', username: '', password: '' }
 }
 
 // ─── AppForm ────────────────────────────────────────────────────────────────
@@ -103,6 +107,46 @@ function AppForm({ form, onChange, showKind, disabled }: AppFormProps) {
           autoComplete="new-password"
         />
       </div>
+
+      {ARR_KINDS.includes(form.kind) && (
+        <>
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
+              Basic Auth <span className="font-normal normal-case">— required for backup downloads</span>
+            </p>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Username <span className="font-normal text-gray-400">(optional)</span>
+                </label>
+                <input
+                  className={inputCls}
+                  type="text"
+                  placeholder="admin"
+                  value={form.username}
+                  disabled={disabled}
+                  onChange={e => onChange({ ...form, username: e.target.value })}
+                  autoComplete="username"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Password <span className="font-normal text-gray-400">(optional)</span>
+                </label>
+                <input
+                  className={inputCls}
+                  type="password"
+                  placeholder="leave blank to keep existing"
+                  value={form.password}
+                  disabled={disabled}
+                  onChange={e => onChange({ ...form, password: e.target.value })}
+                  autoComplete="new-password"
+                />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -334,6 +378,8 @@ export function Apps() {
         name: f.name,
         base_url: f.base_url,
         api_key: f.api_key || undefined,
+        username: f.username || undefined,
+        password: f.password || undefined,
       }),
     onSuccess: () => {
       invalidate()
@@ -348,6 +394,8 @@ export function Apps() {
         name: f.name,
         base_url: f.base_url,
         api_key: f.api_key || undefined,
+        username: f.username || undefined,
+        password: f.password || undefined,
       }),
     onSuccess: () => {
       invalidate()
@@ -387,7 +435,7 @@ export function Apps() {
   // ── handlers ──
   function openEdit(inst: Instance) {
     setEditTarget(inst)
-    setEditForm({ kind: inst.kind, name: inst.name, base_url: inst.base_url, api_key: '' })
+    setEditForm({ kind: inst.kind, name: inst.name, base_url: inst.base_url, api_key: '', username: '', password: '' })
   }
 
   function handleDelete(inst: Instance) {

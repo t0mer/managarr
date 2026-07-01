@@ -1,15 +1,13 @@
 // web/src/components/Sidebar.tsx
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, ScrollText, AlertCircle, Server,
+  LayoutDashboard, Server,
   Archive, RefreshCw, Settings,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const nav = [
   { to: '/',        label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/logs',    label: 'Logs',      icon: ScrollText },
-  { to: '/issues',  label: 'Issues',    icon: AlertCircle },
   { to: '/apps',    label: 'Apps',      icon: Server },
   { to: '/backup',  label: 'Backup',    icon: Archive },
   { to: '/sync',    label: 'Sync',      icon: RefreshCw },

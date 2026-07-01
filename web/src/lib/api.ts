@@ -1,7 +1,7 @@
 // web/src/lib/api.ts
 import type {
   HealthResponse, VersionResponse,
-  Instance, LogEntry, Issue, IssueStatus,
+  Instance,
   MetricSeries, NotifyChannel, BackupTarget, Backup,
   SyncJob, SyncPreview, PlexStats, DelugeStats, JackettStats,
   SonarrStats, RadarrStats, LidarrStats
@@ -36,43 +36,14 @@ export const api = {
   instances: {
     list: () => get<Instance[]>('/instances'),
     get: (id: string) => get<Instance>(`/instances/${id}`),
-    create: (body: { kind: string; name: string; base_url: string; api_key?: string }) =>
+    create: (body: { kind: string; name: string; base_url: string; api_key?: string; username?: string; password?: string }) =>
       post<Instance>('/instances', body),
-    update: (id: string, body: { name: string; base_url: string; api_key?: string }) =>
+    update: (id: string, body: { name: string; base_url: string; api_key?: string; username?: string; password?: string }) =>
       put<Instance>(`/instances/${id}`, body),
     delete: (id: string) => del(`/instances/${id}`),
     test: (id: string) => post<{ ok: boolean; error?: string }>(`/instances/${id}/test`),
     setEnabled: (id: string, enabled: boolean) =>
       patch<void>(`/instances/${id}/enabled`, { enabled }),
-  },
-
-  logs: {
-    list: (params?: { instance_id?: string; level?: string; limit?: number; before?: string }) => {
-      const q = new URLSearchParams()
-      if (params?.instance_id) q.set('instance_id', params.instance_id)
-      if (params?.level) q.set('level', params.level)
-      if (params?.limit) q.set('limit', String(params.limit))
-      if (params?.before) q.set('before', params.before)
-      const qs = q.toString()
-      return get<LogEntry[]>(`/logs${qs ? '?' + qs : ''}`)
-    },
-    streamUrl: (params?: { instance_id?: string; level?: string }) => {
-      const q = new URLSearchParams()
-      if (params?.instance_id) q.set('instance_id', params.instance_id)
-      if (params?.level) q.set('level', params.level)
-      const qs = q.toString()
-      return `${BASE}/logs/stream${qs ? '?' + qs : ''}`
-    },
-  },
-
-  issues: {
-    list: (status?: IssueStatus | 'all') => {
-      const qs = status && status !== 'all' ? `?status=${status}` : ''
-      return get<Issue[]>(`/issues${qs}`)
-    },
-    get: (id: string) => get<Issue>(`/issues/${id}`),
-    updateStatus: (id: string, status: IssueStatus) =>
-      patch<void>(`/issues/${id}/status`, { status }),
   },
 
   metrics: {

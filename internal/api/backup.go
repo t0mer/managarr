@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -215,22 +216,37 @@ func (h *BackupHandler) RunBackup(w http.ResponseWriter, r *http.Request) {
 		Status:     "pending",
 	})
 
-	// Run asynchronously.
+	// Run asynchronously. Use context.Background() — r.Context() is cancelled
+	// the moment the handler returns its 202, which would kill the download.
 	go func() {
-		blob, err := cb.ExportConfig(r.Context(), inst)
+		blob, err := cb.ExportConfig(context.Background(), inst)
 		if err != nil {
+			h.Log.Error("backup failed", "backup_id", backupID, "instance", inst.Name, "error", err)
 			_ = storage.UpdateBackupStatus(h.DB, backupID, "error", "", err.Error(), 0)
 			return
 		}
+
 		// Sanitize path components to prevent traversal.
 		safeID := safeName(inst.ID)
-		safeName_ := safeName(inst.Name)
 		if safeID == "" {
 			safeID = "unknown"
 		}
-		if safeName_ == "" {
-			safeName_ = "instance"
+
+		// Derive filename: prefer the blob's own filename (e.g. from *arr backup
+		// API), fall back to a generated name.
+		rawName := filepath.Base(blob.Filename)
+		if rawName == "" || rawName == "." {
+			ext := ".zip"
+			if blob.ContentType == "application/json" {
+				ext = ".json"
+			}
+			rawName = fmt.Sprintf("%s-%s%s", safeName(inst.Name), now.Format("20060102T150405Z"), ext)
 		}
+		fileName := safeName(rawName)
+		if fileName == "" {
+			fileName = "backup.zip"
+		}
+
 		dir := filepath.Join(backupRoot, safeID)
 		if !containedIn(backupRoot, dir) {
 			_ = storage.UpdateBackupStatus(h.DB, backupID, "error", "", "computed dir escapes backup root", 0)
@@ -240,7 +256,6 @@ func (h *BackupHandler) RunBackup(w http.ResponseWriter, r *http.Request) {
 			_ = storage.UpdateBackupStatus(h.DB, backupID, "error", "", fmt.Sprintf("mkdir: %v", err), 0)
 			return
 		}
-		fileName := fmt.Sprintf("%s-%s.json", safeName_, now.Format("20060102T150405Z"))
 		fullPath := filepath.Join(dir, fileName)
 		if !containedIn(backupRoot, fullPath) {
 			_ = storage.UpdateBackupStatus(h.DB, backupID, "error", "", "computed path escapes backup root", 0)
@@ -250,7 +265,7 @@ func (h *BackupHandler) RunBackup(w http.ResponseWriter, r *http.Request) {
 			_ = storage.UpdateBackupStatus(h.DB, backupID, "error", "", fmt.Sprintf("write: %v", err), 0)
 			return
 		}
-		// Store only the relative filename, not the full server path, to avoid disclosing server layout.
+		// Store only the relative path to avoid disclosing server layout.
 		relPath, relErr := filepath.Rel(backupRoot, fullPath)
 		if relErr != nil {
 			relPath = fileName
